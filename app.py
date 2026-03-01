@@ -60,16 +60,24 @@ def conectar_google():
     except Exception as e:
         return None, None
 
+# AQUI ESTÁ A ÚNICA ALTERAÇÃO - O MODO DETETIVE DA IA
 def consultar_ia(mensagem, sistema):
     try:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {MINHA_CHAVE}", "Content-Type": "application/json"}
         # Modelo rápido e estável
         dados = {"model": "llama-3.1-8b-instant", "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": mensagem}], "temperature": 0.4}
-        resp = requests.post(url, headers=headers, json=dados).json()
-        return resp['choices'][0]['message']['content']
-    except: 
-        return "Olá! Ficamos muito felizes com seu interesse. Por favor, avance para escolher o melhor horário para sua aula."
+        resp = requests.post(url, headers=headers, json=dados)
+        
+        # Se a Groq der erro, isso vai nos mostrar o motivo exato
+        if resp.status_code != 200:
+            st.error(f"🚨 DETETIVE DA IA ATIVADO - Erro da Groq: {resp.text}")
+            return f"Erro bloqueando a IA: {resp.text}"
+            
+        return resp.json()['choices'][0]['message']['content']
+    except Exception as e: 
+        st.error(f"🚨 ERRO INTERNO DA IA: {e}")
+        return "Erro de conexão com a IA."
 
 def buscar_horarios_livres(service_calendar):
     sugestoes = []
