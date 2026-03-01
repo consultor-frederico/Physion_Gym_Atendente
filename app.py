@@ -21,13 +21,50 @@ st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon=
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar']
 NOME_PLANILHA_GOOGLE = 'Leads_Pilates'
 
+# --- 🆕 FUNÇÕES DE BANCO DE DATOS (ALUNOS FIXOS) ---
+def buscar_aluno_por_cpf(client_sheets, cpf):
+    try:
+        sh = client_sheets.open(NOME_PLANILHA_GOOGLE)
+        try:
+            sheet_alunos = sh.worksheet("Alunos")
+        except:
+            sheet_alunos = sh.add_worksheet(title="Alunos", rows="1000", cols="10")
+            sheet_alunos.append_row(["CPF", "Nome", "WhatsApp", "Objetivo", "Restricoes"])
+            return None
+        
+        cell = sheet_alunos.find(cpf)
+        if cell:
+            dados = sheet_alunos.row_values(cell.row)
+            return {"cpf": dados[0], "nome": dados[1], "tel": dados[2], "objetivo": dados[3], "restricoes": dados[4]}
+        return None
+    except:
+        return None
+
+def salvar_ou_atualizar_aluno(client_sheets, dados):
+    try:
+        sh = client_sheets.open(NOME_PLANILHA_GOOGLE)
+        try:
+            sheet_alunos = sh.worksheet("Alunos")
+        except:
+            sheet_alunos = sh.add_worksheet(title="Alunos", rows="1000", cols="10")
+            sheet_alunos.append_row(["CPF", "Nome", "WhatsApp", "Objetivo", "Restricoes"])
+        
+        cell = sheet_alunos.find(dados['cpf'])
+        nova_linha = [dados['cpf'], dados['nome'], dados['tel'], dados['objetivo'], dados.get('restricoes', 'N/A')]
+        
+        if cell:
+            sheet_alunos.update(f"A{cell.row}:E{cell.row}", [nova_linha])
+        else:
+            sheet_alunos.append_row(nova_linha)
+    except:
+        pass
+
 # --- FUNÇÃO PARA ATUALIZAR STATUS (RESPOSTA DO ALUNO) ---
 def atualizar_status_aluno(client_sheets, nome_aluno, novo_status, motivo=""):
     try:
         sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
         cell = sheet.find(nome_aluno)
         if cell:
-            # Coluna 11: Confirmação | Coluna 12: Motivo Cancelamento
             sheet.update_cell(cell.row, 11, novo_status)
             if motivo:
                 sheet.update_cell(cell.row, 12, motivo)
@@ -145,36 +182,22 @@ def main():
     if "confirma" in params and "aluno" in params:
         nome_aluno = params["aluno"]
         acao = params["confirma"]
-        
         col_logo, _ = st.columns([1, 4])
         with col_logo:
             if os.path.exists("logo.png"): st.image("logo.png", width=120)
-            
         st.title(f"Olá, {nome_aluno}! 🧘‍♀️")
-        
         if acao == "sim":
             if atualizar_status_aluno(client_sheets, nome_aluno, "Confirmado"):
                 st.success("✨ **Sua presença foi confirmada com sucesso!** Ficamos muito felizes em ter você na aula amanhã. Até logo!")
             else:
                 st.error("Ops! Não conseguimos localizar seu registro. Por favor, fale com a gente no WhatsApp.")
-        
         elif acao == "nao":
             st.subheader("Entendemos que imprevistos acontecem. 😔")
             st.write("Por favor, selecione o motivo do cancelamento para nos ajudar na organização:")
-            
-            motivo_selecionado = st.radio("Selecione uma opção:", [
-                "Imprevisto de Trabalho",
-                "Motivo de Saúde",
-                "Dificuldade de Transporte",
-                "Compromisso Pessoal Urgente",
-                "Esquecimento/Perda de Prazo",
-                "Outros"
-            ])
-            
+            motivo_selecionado = st.radio("Selecione uma opção:", ["Imprevisto de Trabalho", "Motivo de Saúde", "Dificuldade de Transporte", "Compromisso Pessoal Urgente", "Esquecimento/Perda de Prazo", "Outros"])
             detalhes_outros = ""
             if motivo_selecionado == "Outros":
                 detalhes_outros = st.text_area("Pode nos contar brevemente o motivo?")
-            
             if st.button("Confirmar Cancelamento"):
                 motivo_final = detalhes_outros if motivo_selecionado == "Outros" else motivo_selecionado
                 if atualizar_status_aluno(client_sheets, nome_aluno, "Cancelado", motivo_final):
@@ -198,25 +221,25 @@ def main():
             dados_planilha = sheet.get_all_records()
             
             st.subheader("🚀 Lembretes de Amanhã")
+            # FILTRO: Somente alunos agendados para o dia seguinte
             amanha = (datetime.now() + timedelta(days=1)).strftime('%d/%m')
-            alunos_amanha = [r for r in dados_planilha if amanha in str(r.get('Horário Agendado', ''))]
+            alunos_amanha = [r for r in dados_planilha if str(r.get('Horário Agendado', '')).startswith(amanha)]
             
             if alunos_amanha:
-                url_app = "https://physiongymatendente.streamlit.app" # URL DO SEU APP
+                url_app = "https://physiongymatendente.streamlit.app" 
                 for aluno in alunos_amanha:
                     col_n, col_b = st.columns([3, 1])
-                    l_sim = f"{url_app}?confirma=sim&aluno={aluno['Nome'].replace(' ', '%20')}"
-                    l_nao = f"{url_app}?confirma=nao&aluno={aluno['Nome'].replace(' ', '%20')}"
-                    
+                    nome_url = requests.utils.quote(str(aluno['Nome']))
+                    l_sim = f"{url_app}?confirma=sim&aluno={nome_url}"
+                    l_nao = f"{url_app}?confirma=nao&aluno={nome_url}"
                     msg = (f"Olá {aluno['Nome']}, tudo bem? Confirmamos sua aula para amanhã ({aluno['Horário Agendado']})?\n\n"
                            f"👍 SIM, CONFIRMO: {l_sim}\n\n"
                            f"❌ NÃO POSSO IR: {l_nao}")
-                    
                     link_wpp = f"https://wa.me/55{re.sub(r'\D', '', str(aluno['WhatsApp']))}?text={requests.utils.quote(msg)}"
                     col_n.write(f"👤 **{aluno['Nome']}** - {aluno['Horário Agendado']} ({aluno.get('Confirmação (Sim/Não)', 'Pendente')})")
                     col_b.markdown(f'''<a href="{link_wpp}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">Mandar WhatsApp</button></a>''', unsafe_allow_html=True)
             else:
-                st.info("Nenhum aluno para amanhã.")
+                st.info(f"Nenhum aluno agendado para amanhã ({amanha}).")
             
             st.divider()
             st.subheader("📋 Lista Geral")
@@ -248,13 +271,32 @@ def main():
         c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("🧘 Já sou Aluno(a)"):
-                st.session_state.tipo_atendimento = "Aluno da Casa"; st.session_state.fase = 1; st.rerun()
+                st.session_state.tipo_atendimento = "Aluno da Casa"; st.session_state.fase = 0.1; st.rerun()
         with c2:
             if st.button("✨ Quero ser Aluno(a)"):
                 st.session_state.fase = 0.5; st.rerun()
         with c3:
             if st.button("🏥 Fisioterapia"):
                 st.session_state.tipo_atendimento = "Consulta Fisioterapia"; st.session_state.fase = 1; st.rerun()
+
+    # --- 🆕 FASE 0.1: BUSCA POR CPF PARA ALUNOS FIXOS ---
+    if st.session_state.fase == 0.1:
+        st.subheader("Identificação de Aluno")
+        cpf_digitado = st.text_input("Digite seu CPF (apenas números):")
+        if st.button("Continuar"):
+            if cpf_digitado:
+                aluno_encontrado = buscar_aluno_por_cpf(client_sheets, cpf_digitado)
+                if aluno_encontrado:
+                    st.session_state.dados_form = aluno_encontrado
+                    st.success(f"Bem-vindo de volta, {aluno_encontrado['nome']}!")
+                    st.session_state.fase = 4; st.rerun()
+                else:
+                    st.warning("CPF não encontrado em nosso banco de alunos fixos. Por favor, preencha o cadastro.")
+                    st.session_state.dados_form['cpf'] = cpf_digitado
+                    st.session_state.fase = 1; st.rerun()
+            else:
+                st.error("Por favor, digite o CPF.")
+        if st.button("⬅️ Voltar"): st.session_state.fase = 0; st.rerun()
 
     if st.session_state.fase == 0.5:
         st.subheader("Bem-vindo! Escolha o tipo de aula:")
@@ -266,16 +308,19 @@ def main():
 
     if st.session_state.fase == 1:
         st.subheader(f"Agendamento: {st.session_state.tipo_atendimento}")
-        nome = st.text_input("Nome Completo")
-        tel = st.text_input("WhatsApp", placeholder="(11) 99999-9999")
+        d_pref = st.session_state.dados_form
+        nome = st.text_input("Nome Completo", value=d_pref.get('nome', ''))
+        tel = st.text_input("WhatsApp", placeholder="(11) 99999-9999", value=d_pref.get('tel', ''))
+        cpf = st.text_input("CPF (Apenas números)", value=d_pref.get('cpf', ''))
         objetivo = "Manutenção"
         restricoes = "N/A"
         if "Novo" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
             objetivo = st.selectbox("Objetivo principal:", ["Alívio de Dores", "Postura", "Recuperação de Lesão", "Flexibilidade", "Outro"])
-            restricoes = st.text_area("Descreva brevemente o que sente:")
+            restricoes = st.text_area("Descreva brevemente o que sente:", value=d_pref.get('restricoes', ''))
         if st.button("Próximo Passo"):
-            if nome and tel:
-                st.session_state.dados_form = {"nome": nome, "tel": tel, "objetivo": objetivo, "restricoes": restricoes}
+            if nome and tel and cpf:
+                st.session_state.dados_form = {"nome": nome, "tel": tel, "cpf": cpf, "objetivo": objetivo, "restricoes": restricoes}
+                salvar_ou_atualizar_aluno(client_sheets, st.session_state.dados_form)
                 if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
                     with st.spinner("Analisando..."):
                         p = f"Aja como recepcionista clínica. Chame {nome} pelo nome. Diga que entendeu o caso e acolha o relato. Seja sucinta."
@@ -283,7 +328,7 @@ def main():
                     st.session_state.fase = 2
                 else: st.session_state.fase = 4
                 st.rerun()
-            else: st.warning("Preencha os campos obrigatórios.")
+            else: st.warning("Preencha os campos obrigatórios (Nome, WhatsApp e CPF).")
 
     if st.session_state.fase == 2:
         st.subheader("Triagem Técnica")
