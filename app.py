@@ -14,49 +14,58 @@ from datetime import datetime, timedelta
 # --- 🔐 CONFIGURAÇÕES VIA SECRETS ---
 MINHA_CHAVE = st.secrets["MINHA_CHAVE"]
 ID_AGENDA = st.secrets["ID_AGENDA"]
+SENHA_ADMIN = "adm123" 
 
-st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon="🧘‍♀️")
+st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon="🧘‍♀️", layout="wide")
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar']
 NOME_PLANILHA_GOOGLE = 'Leads_Pilates'
+
+# --- FUNÇÃO PARA ATUALIZAR STATUS (RESPOSTA DO ALUNO) ---
+def atualizar_status_aluno(client_sheets, nome_aluno, novo_status, motivo=""):
+    try:
+        sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
+        cell = sheet.find(nome_aluno)
+        if cell:
+            # Coluna 11: Confirmação | Coluna 12: Motivo Cancelamento
+            sheet.update_cell(cell.row, 11, novo_status)
+            if motivo:
+                sheet.update_cell(cell.row, 12, motivo)
+            return True
+        return False
+    except:
+        return False
 
 # --- FUNÇÃO PARA GERAR O PDF DO PACIENTE COM DATA E HORA ---
 def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
     pdf = FPDF()
     pdf.add_page()
-    
     if os.path.exists("logo.png"):
         pdf.image("logo.png", x=10, y=8, w=33)
         pdf.ln(20)
-    
     pdf.set_font("Arial", "B", 16)
     titulo = "Comprovante de Agendamento" if "Antigo" in tipo_atendimento else "Relatorio de Acolhimento"
     pdf.cell(0, 10, titulo.encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(10)
-    
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, f"Paciente: {nome}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.cell(0, 10, f"Servico: {tipo_atendimento}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.cell(0, 10, f"Objetivo: {objetivo}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
-    
     pdf.set_text_color(0, 102, 204)
     pdf.cell(0, 10, f"Horario: {horario}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.set_text_color(0, 0, 0)
-    
     if "Avaliação" in tipo_atendimento or "Fisioterapia" in tipo_atendimento:
         pdf.ln(5)
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, "Analise Inicial:".encode('latin-1', 'replace').decode('latin-1'), ln=True)
         pdf.set_font("Arial", "", 11)
         pdf.multi_cell(0, 7, analise_ia.encode('latin-1', 'replace').decode('latin-1'))
-    
     pdf.ln(20)
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
     aviso = ("AVISO: Este documento confirma seu agendamento. Esta analise nao substitui "
              "a avaliacao presencial clinica.").encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 5, aviso, align='C')
-    
     return bytes(pdf.output())
 
 # --- FUNÇÕES DE SISTEMA ---
@@ -129,17 +138,61 @@ def salvar_na_planilha(client_sheets, dados):
 
 # --- FLUXO PRINCIPAL ---
 def main():
+    client_sheets, service_calendar = conectar_google()
+    
+    # --- LÓGICA DE CAPTURA DE RESPOSTA DO ALUNO (VIA WHATSAPP) ---
+    params = st.query_params
+    if "confirma" in params and "aluno" in params:
+        nome_aluno = params["aluno"]
+        acao = params["confirma"]
+        
+        col_logo, _ = st.columns([1, 4])
+        with col_logo:
+            if os.path.exists("logo.png"): st.image("logo.png", width=120)
+            
+        st.title(f"Olá, {nome_aluno}! 🧘‍♀️")
+        
+        if acao == "sim":
+            if atualizar_status_aluno(client_sheets, nome_aluno, "Confirmado"):
+                st.success("✨ **Sua presença foi confirmada com sucesso!** Ficamos muito felizes em ter você na aula amanhã. Até logo!")
+            else:
+                st.error("Ops! Não conseguimos localizar seu registro. Por favor, fale com a gente no WhatsApp.")
+        
+        elif acao == "nao":
+            st.subheader("Entendemos que imprevistos acontecem. 😔")
+            st.write("Por favor, selecione o motivo do cancelamento para nos ajudar na organização:")
+            
+            motivo_selecionado = st.radio("Selecione uma opção:", [
+                "Imprevisto de Trabalho",
+                "Motivo de Saúde",
+                "Dificuldade de Transporte",
+                "Compromisso Pessoal Urgente",
+                "Esquecimento/Perda de Prazo",
+                "Outros"
+            ])
+            
+            detalhes_outros = ""
+            if motivo_selecionado == "Outros":
+                detalhes_outros = st.text_area("Pode nos contar brevemente o motivo?")
+            
+            if st.button("Confirmar Cancelamento"):
+                motivo_final = detalhes_outros if motivo_selecionado == "Outros" else motivo_selecionado
+                if atualizar_status_aluno(client_sheets, nome_aluno, "Cancelado", motivo_final):
+                    st.info("Obrigado pelo aviso. Seu horário foi liberado. Esperamos ver você em breve!")
+                else:
+                    st.error("Erro ao processar o cancelamento.")
+        st.stop()
+
     if 'show_admin' not in st.session_state: st.session_state.show_admin = False
 
+    # --- METADADOS PARA PREVIEW ---
     st.markdown(f"""<head><meta property="og:title" content="Estúdio de Pilates - Coluna sem Dor" /><meta property="og:image" content="https://raw.githubusercontent.com/consultor-frederico/Physion_Gym_Atendente/main/logo.png" /></head>""", unsafe_allow_html=True)
-
-    client_sheets, service_calendar = conectar_google()
 
     # --- TELA DE ADMINISTRADOR ---
     if st.session_state.show_admin:
         st.title("🔐 Área Administrativa")
         senha = st.text_input("Senha de acesso:", type="password")
-        if senha == "adm123":
+        if senha == SENHA_ADMIN:
             st.success("Acesso autorizado!")
             sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
             dados_planilha = sheet.get_all_records()
@@ -149,21 +202,26 @@ def main():
             alunos_amanha = [r for r in dados_planilha if amanha in str(r.get('Horário Agendado', ''))]
             
             if alunos_amanha:
+                url_app = "https://physiongymatendente.streamlit.app" # URL DO SEU APP
                 for aluno in alunos_amanha:
                     col_n, col_b = st.columns([3, 1])
-                    msg = f"Olá {aluno['Nome']}, confirmamos sua aula para amanhã ({aluno['Horário Agendado']}). Você confirma presença? 👍"
+                    l_sim = f"{url_app}?confirma=sim&aluno={aluno['Nome'].replace(' ', '%20')}"
+                    l_nao = f"{url_app}?confirma=nao&aluno={aluno['Nome'].replace(' ', '%20')}"
+                    
+                    msg = (f"Olá {aluno['Nome']}, tudo bem? Confirmamos sua aula para amanhã ({aluno['Horário Agendado']})?\n\n"
+                           f"👍 SIM, CONFIRMO: {l_sim}\n\n"
+                           f"❌ NÃO POSSO IR: {l_nao}")
+                    
                     link_wpp = f"https://wa.me/55{re.sub(r'\D', '', str(aluno['WhatsApp']))}?text={requests.utils.quote(msg)}"
-                    col_n.write(f"👤 **{aluno['Nome']}** - ⏰ {aluno['Horário Agendado']}")
+                    col_n.write(f"👤 **{aluno['Nome']}** - {aluno['Horário Agendado']} ({aluno.get('Confirmação (Sim/Não)', 'Pendente')})")
                     col_b.markdown(f'''<a href="{link_wpp}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">Mandar WhatsApp</button></a>''', unsafe_allow_html=True)
             else:
                 st.info("Nenhum aluno para amanhã.")
             
             st.divider()
-            st.subheader("📋 Lista de Todos os Agendamentos")
+            st.subheader("📋 Lista Geral")
             st.dataframe(dados_planilha)
-            
-            if st.button("⬅️ Sair do Modo Admin"):
-                st.session_state.show_admin = False; st.rerun()
+            if st.button("⬅️ Sair"): st.session_state.show_admin = False; st.rerun()
         return
 
     # --- FLUXO DO CLIENTE ---
@@ -185,7 +243,6 @@ def main():
         st.markdown("#### Coluna sem dor e mais qualidade de vida 🌟")
     st.divider()
 
-    # --- FASES DO AGENDAMENTO (CÓDIGO ORIGINAL) ---
     if st.session_state.fase == 0:
         st.subheader("Como podemos ajudar você hoje?")
         c1, c2, c3 = st.columns(3)
@@ -259,13 +316,12 @@ def main():
 
     if st.session_state.fase == 5:
         st.balloons()
-        st.success(f"✅ Agendamento Realizado!")
-        st.markdown(f"### Confirmado: **{st.session_state.horario_escolhido}**")
+        st.success(f"✅ Agendamento Realizado com Sucesso!")
+        st.markdown(f"### Aula/Consulta confirmada: **{st.session_state.horario_escolhido}**")
         pdf_bytes = gerar_pdf_paciente(st.session_state.dados_form['nome'], st.session_state.dados_form['objetivo'], st.session_state.horario_escolhido, st.session_state.ia_resposta_paciente, st.session_state.tipo_atendimento)
-        st.download_button(label="📥 Baixar Comprovante (PDF)", data=pdf_bytes, file_name=f"Agendamento.pdf", mime="application/pdf")
+        st.download_button(label="📥 Baixar Comprovante (PDF)", data=pdf_bytes, file_name=f"Agendamento_{st.session_state.dados_form['nome']}.pdf", mime="application/pdf")
         st.button("🔄 Novo Atendimento", on_click=lambda: st.session_state.clear())
 
-    # --- BOTÃO DISCRETO DE ADMIN NO RODAPÉ ---
     st.markdown("<br><br><hr>", unsafe_allow_html=True)
     if st.button("⚙️ Administração"):
         st.session_state.show_admin = True; st.rerun()
