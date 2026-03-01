@@ -118,15 +118,19 @@ def criar_evento_agenda(service_calendar, horario_texto, nome, tel, objetivo):
 def salvar_na_planilha(client_sheets, dados):
     try:
         sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
-        # CABEÇALHO ATUALIZADO COM GESTÃO DE CONFIRMAÇÃO E CANCELAMENTO
-        if not sheet.get_all_values():
-            sheet.append_row([
+        
+        # --- VERIFICAÇÃO E CRIAÇÃO DO CABEÇALHO ---
+        primeira_celula = sheet.acell('A1').value
+        if not primeira_celula or primeira_celula == "":
+            cabecalho = [
                 "Data Cadastro", "Nome", "WhatsApp", "Objetivo", "Dores/Relato", 
                 "Horário Agendado", "Análise IA", "Arquivo PDF", "Status Agenda", 
                 "Tipo Atendimento", "Confirmação (Sim/Não)", "Motivo Cancelamento"
-            ])
-        
-        sheet.append_row([
+            ]
+            sheet.insert_row(cabecalho, 1)
+
+        # --- PREPARAÇÃO DA NOVA LINHA ---
+        nova_linha = [
             dados['data_hora'], 
             dados['nome'], 
             dados['tel'], 
@@ -139,7 +143,9 @@ def salvar_na_planilha(client_sheets, dados):
             dados['tipo'],
             "Pendente", # Status inicial da confirmação
             ""          # Motivo de cancelamento inicia vazio
-        ])
+        ]
+        
+        sheet.append_row(nova_linha)
         return True
     except: return False
 
@@ -182,12 +188,12 @@ def main():
         st.subheader("Como podemos ajudar você hoje?")
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.info("🧘 **Já sou Aluno(a)**")
+            st.info("🧘 **Pilates (Aluno Antigo)**")
             if st.button("Marcar minha Aula"):
-                st.session_state.tipo_atendimento = "Aluno da Casa"
+                st.session_state.tipo_atendimento = "Aluno Antigo"
                 st.session_state.fase = 1; st.rerun()
         with c2:
-            st.success("✨ **Quero ser Aluno(a)**")
+            st.success("✨ **Pilates (Novo Aluno)**")
             if st.button("Agendar Aula Exp."):
                 st.session_state.fase = 0.5; st.rerun()
         with c3:
@@ -199,10 +205,10 @@ def main():
     if st.session_state.fase == 0.5:
         st.subheader("Bem-vindo! Escolha o tipo de aula:")
         if st.button("Apenas agendar (Rápido)"):
-            st.session_state.tipo_atendimento = "Novo Aluno - Direto"
+            st.session_state.tipo_atendimento = "Novo - Rápido"
             st.session_state.fase = 1; st.rerun()
         if st.button("Agendar com Avaliação Técnica"):
-            st.session_state.tipo_atendimento = "Novo Aluno - Avaliação"
+            st.session_state.tipo_atendimento = "Novo - Avaliação"
             st.session_state.fase = 1; st.rerun()
         if st.button("⬅️ Voltar"): st.session_state.fase = 0; st.rerun()
 
@@ -215,14 +221,14 @@ def main():
         restricoes = "N/A"
         
         if "Novo" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-            objetivo = st.selectbox("Seu objetivo principal:", ["Alívio de Dores", "Postura", "Recuperação de Lesão", "Flexibilidade", "Outro"])
+            objetivo = st.selectbox("Objetivo principal:", ["Alívio de Dores", "Postura", "Recuperação de Lesão", "Flexibilidade", "Outro"])
             restricoes = st.text_area("Descreva brevemente o que sente:")
 
         if st.button("Próximo Passo"):
             if nome and tel:
                 st.session_state.dados_form = {"nome": nome, "tel": tel, "objetivo": objetivo, "restricoes": restricoes}
                 if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-                    with st.spinner("Analisando seu perfil..."):
+                    with st.spinner("Analisando..."):
                         p = f"Aja como recepcionista clínica. Chame {nome} pelo nome. Diga que entendeu o caso de {objetivo} e acolha o relato '{restricoes}'. Seja sucinta (2 linhas)."
                         st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Clínica.")
                     st.session_state.fase = 2
