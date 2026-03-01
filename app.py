@@ -38,7 +38,7 @@ def gerar_pdf_paciente(nome, objetivo, horario, analise_ia):
     pdf.cell(0, 10, f"Paciente: {nome}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.cell(0, 10, f"Objetivo principal: {objetivo}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     
-    # ADICIONADO: DATA E HORA DO AGENDAMENTO NO PDF
+    # DATA E HORA DO AGENDAMENTO NO PDF
     pdf.set_text_color(0, 102, 204) # Azul para destacar o horário
     pdf.cell(0, 10, f"Aula Agendada para: {horario}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.set_text_color(0, 0, 0) # Volta para preto
@@ -130,8 +130,8 @@ def main():
     if 'fase' not in st.session_state: st.session_state.fase = 1
     if 'dados_form' not in st.session_state: st.session_state.dados_form = {}
     if 'ia_inicial' not in st.session_state: st.session_state.ia_inicial = ""
-    if 'ia_resposta_paciente' not in st.session_state: st.session_state.ia_resposta_paciente = "Aguardando analise de perfil..."
-    if 'conteudo_arquivo' not in st.session_state: st.session_state.conteudo_arquivo = "Sem PDF"
+    if 'ia_resposta_paciente' not in st.session_state: st.session_state.ia_resposta_paciente = ""
+    if 'conteudo_arquivo' not in st.session_state: st.session_state.conteudo_arquivo = ""
     if 'nome_arquivo' not in st.session_state: st.session_state.nome_arquivo = "Nenhum"
     if 'horario_escolhido' not in st.session_state: st.session_state.horario_escolhido = ""
 
@@ -165,8 +165,9 @@ def main():
             else:
                 st.session_state.dados_form.update({"nome": nome, "tel": tel, "objetivo": objetivo, "restricoes": restricoes})
                 with st.spinner("Analisando seu perfil..."):
-                    p = f"Seja uma recepcionista acolhedora para {nome} que busca {objetivo}. Valide que o Pilates ajudará e convide para a próxima fase."
-                    st.session_state.ia_inicial = consultar_ia(p, "Recepcionista de Estúdio de Pilates.")
+                    # MODIFICAÇÃO 1: IA BEM SUCINTA NO ACOLHIMENTO
+                    p = f"Aja como uma recepcionista humana. Seja extremamente curta (máximo 2 linhas). Diga a {nome} que você entendeu perfeitamente o objetivo de {objetivo} e acolha brevemente o que foi relatado. Termine convidando para a próxima fase."
+                    st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Sucinta.")
                     st.session_state.fase = 2; st.rerun()
 
     if st.session_state.fase == 2:
@@ -182,8 +183,9 @@ def main():
             st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
             if st.button("Analisar meu Exame"):
                 with st.spinner("Lendo seu laudo..."):
-                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Exame: {st.session_state.conteudo_arquivo}. Explique em 3 linhas de forma muito simples e acolhedora o que você viu no exame e como o Pilates vai proteger a coluna dele(a)."
-                    st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta que explica de forma simples e humana.")
+                    # MODIFICAÇÃO 2: IA MOSTRA QUE LEU E DÁ RESUMO SIMPLES
+                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo do exame: {st.session_state.conteudo_arquivo}. Diga que conseguiu ler o exame com sucesso. Em 3 linhas, explique o que encontrou de mais relevante de forma acolhedora e como o Pilates ajudará nesse caso específico."
+                    st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta que resume exames de forma simples.")
                 st.info(st.session_state.ia_resposta_paciente)
         
         st.write("---")
@@ -200,6 +202,16 @@ def main():
             with st.spinner("Finalizando..."):
                 st.session_state.horario_escolhido = horario
                 d = st.session_state.dados_form
+                
+                # MODIFICAÇÃO 3: RESUMO FINAL PARA O PDF
+                # Se não houver arquivo, resume o que o paciente escreveu. Se houver, complementa com o exame.
+                if not st.session_state.conteudo_arquivo or st.session_state.conteudo_arquivo == "Sem PDF":
+                    p_final = f"O paciente {d['nome']} relatou o seguinte: '{d['restricoes']}'. Resuma em um parágrafo acolhedor o que você entendeu das dores dele e como vamos focar no objetivo de {d['objetivo']}."
+                else:
+                    p_final = f"O paciente {d['nome']} relatou: '{d['restricoes']}'. O exame diz: '{st.session_state.conteudo_arquivo}'. Faça um resumo unindo as dores relatadas com o que foi visto no exame, de forma acolhedora e profissional."
+                
+                st.session_state.ia_resposta_paciente = consultar_ia(p_final, "Analista de Acolhimento em Pilates.")
+                
                 p_prof = f"Aluno: {d['nome']}. Dores: {d['restricoes']}. Exame: {st.session_state.conteudo_arquivo}. Forneça diagnóstico técnico e restrições de movimento."
                 parecer = consultar_ia(p_prof, "Fisioterapeuta Sênior Analista.")
                 
@@ -213,7 +225,7 @@ def main():
         st.markdown(f"### Sua aula esta confirmada para: **{st.session_state.horario_escolhido}**")
         st.write("Aguardamos voce para sua aula experimental!")
         
-        # GERA O PDF COM NOME, OBJETIVO, HORARIO E ANALISE
+        # GERA O PDF COM O RESUMO ATUALIZADO (SEM "AGUARDANDO ANALISE")
         pdf_bytes = gerar_pdf_paciente(
             st.session_state.dados_form['nome'], 
             st.session_state.dados_form['objetivo'], 
