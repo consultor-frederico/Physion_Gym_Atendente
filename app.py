@@ -184,8 +184,9 @@ def main():
                 st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
                 if st.button("Analisar meu Exame"):
                     with st.spinner("Lendo seu laudo médico..."):
-                        p_exame = f"Paciente {st.session_state.dados_form['nome']} enviou o seguinte exame: {st.session_state.conteudo_arquivo}. Dê um feedback curto, simples, sem usar termos complexos. Tranquilize o paciente dizendo que o Pilates é adaptável a isso e que o professor avaliará em detalhes na aula."
-                        st.session_state.ia_resposta_paciente = consultar_ia(p_exame, "Fisioterapeuta empático")
+                        # AJUSTE NO PROMPT 1: Obriga a chamar pelo nome, explicar o que entendeu e complementar
+                        p_exame = f"Aja como um fisioterapeuta empático. O paciente se chama {st.session_state.dados_form['nome']} e anexou o seguinte laudo: {st.session_state.conteudo_arquivo}. 1) Chame-o pelo nome. 2) Mostre que você leu o exame citando resumidamente em termos simples o problema principal que você identificou. 3) Complemente tranquilizando a pessoa, explicando como o Pilates ajuda especificamente nesse diagnóstico, avisando que o professor avaliará isso de perto."
+                        st.session_state.ia_resposta_paciente = consultar_ia(p_exame, "Fisioterapeuta Especialista e Acolhedor")
                     st.info(f"**Análise Preliminar:**\n\n{st.session_state.ia_resposta_paciente}")
         st.write("---")
         # ------------------------------------
@@ -204,9 +205,9 @@ def main():
             with st.spinner("Reservando seu horário..."):
                 d = st.session_state.dados_form
                 
-                # IA GERA A ANÁLISE PROFUNDA (INCLUINDO O PDF SE HOUVER)
-                p_instrutor = f"Aja como Fisioterapeuta Perito. Crie um PRONTUÁRIO TÉCNICO para o instrutor de Pilates que dará aula para {d['nome']}. Objetivo: {d['objetivo']}. Dores relatadas: {d['restricoes']}. Conteúdo do Laudo/Exame Anexado: {st.session_state.conteudo_arquivo}. Forneça: 1. Interpretação clínica. 2. Riscos biomecânicos. 3. Exercícios contraindicados. 4. Foco da primeira aula."
-                parecer = consultar_ia(p_instrutor, "Fisioterapeuta Especialista em Pilates")
+                # AJUSTE NO PROMPT 2: Obriga a dar a leitura definitiva do laudo e adiantar o problema pro fisioterapeuta
+                p_instrutor = f"Você é um Fisioterapeuta Sênior montando um prontuário para o instrutor de Pilates. Aluno: {d['nome']}. Relato inicial: {d['restricoes']}. TEXTO DO EXAME ANEXADO: {st.session_state.conteudo_arquivo}. Sua tarefa OBRIGATÓRIA: 1. Explicar O QUE VOCÊ LEU EM DEFINITIVO no exame, dando o diagnóstico real. 2. Adiantar o problema biomecânico/restrição de movimento que o aluno vai apresentar. 3. Listar exercícios contraindicados. 4. Foco sugerido. Seja extremamente técnico e direto."
+                parecer = consultar_ia(p_instrutor, "Fisioterapeuta Sênior Analista")
                 
                 status = criar_evento_agenda(service_calendar, horario, d['nome'], d['tel'], d['objetivo'])
                 
