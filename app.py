@@ -111,7 +111,8 @@ def criar_evento_agenda(service_calendar, horario_texto, nome, tel, objetivo):
 
 def salvar_na_planilha(client_sheets, dados):
     try:
-        sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
+        sh = client_sheets.open(NOME_PLANILHA_GOOGLE)
+        sheet = sh.sheet1
         if not sheet.get_all_values():
             # CABEÇALHO ATUALIZADO COM AS NOVAS COLUNAS
             sheet.append_row(["Data da Triagem", "Nome", "WhatsApp", "Objetivo", "Restrições/Dores", "Horário Agendado", "Análise Paciente", "Exame Anexado", "ANÁLISE PROFUNDA (PROFESSOR)", "Status"])
@@ -122,7 +123,10 @@ def salvar_na_planilha(client_sheets, dados):
         ]
         sheet.append_row(linha)
         return True
-    except: return False
+    except Exception as e:
+        # AQUI ESTÁ O DETETIVE! ELE VAI MOSTRAR O ERRO NA TELA
+        st.error(f"🚨 DETETIVE ATIVADO - O erro exato da planilha é: {e}")
+        return False
 
 # --- FLUXO PRINCIPAL ---
 def main():
@@ -206,7 +210,7 @@ def main():
                 status = criar_evento_agenda(service_calendar, horario, d['nome'], d['tel'], d['objetivo'])
                 
                 # SALVA TUDO NA PLANILHA
-                salvar_na_planilha(client_sheets, {
+                salvo_com_sucesso = salvar_na_planilha(client_sheets, {
                     **d, 
                     "data_hora": datetime.now().strftime("%d/%m %H:%M"), 
                     "melhor_horario": horario, 
@@ -216,7 +220,9 @@ def main():
                     "status_agenda": status
                 })
                 
-                st.session_state.fase = 5; st.rerun()
+                if salvo_com_sucesso:
+                    st.session_state.fase = 5
+                    st.rerun()
 
     if st.session_state.fase == 5:
         st.balloons()
