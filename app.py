@@ -14,9 +14,8 @@ from datetime import datetime, timedelta
 # --- 🔐 CONFIGURAÇÕES VIA SECRETS ---
 MINHA_CHAVE = st.secrets["MINHA_CHAVE"]
 ID_AGENDA = st.secrets["ID_AGENDA"]
-SENHA_ADMIN = "admin123" # Senha para acessar o painel de gestão
 
-st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon="🧘‍♀️", layout="wide")
+st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon="🧘‍♀️")
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar']
 NOME_PLANILHA_GOOGLE = 'Leads_Pilates'
@@ -119,75 +118,55 @@ def criar_evento_agenda(service_calendar, horario_texto, nome, tel, objetivo):
 def salvar_na_planilha(client_sheets, dados):
     try:
         sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
-        # --- VERIFICAÇÃO REFORÇADA DO CABEÇALHO ---
         primeira_celula = sheet.acell('A1').value
         if not primeira_celula or primeira_celula == "":
-            cabecalho = [
-                "Data Cadastro", "Nome", "WhatsApp", "Objetivo", "Dores/Relato", 
-                "Horário Agendado", "Análise IA", "Arquivo PDF", "Status Agenda", 
-                "Tipo Atendimento", "Confirmação (Sim/Não)", "Motivo Cancelamento"
-            ]
+            cabecalho = ["Data Cadastro", "Nome", "WhatsApp", "Objetivo", "Dores/Relato", "Horário Agendado", "Análise IA", "Arquivo PDF", "Status Agenda", "Tipo Atendimento", "Confirmação (Sim/Não)", "Motivo Cancelamento"]
             sheet.insert_row(cabecalho, 1)
-
-        sheet.append_row([
-            dados['data_hora'], dados['nome'], dados['tel'], dados['objetivo'], 
-            dados.get('restricoes', 'N/A'), dados['melhor_horario'], 
-            dados.get('ia_resposta_paciente', 'N/A'), dados.get('nome_arquivo', 'Nenhum'), 
-            dados['status_agenda'], dados['tipo'], "Pendente", ""
-        ])
+        nova_linha = [dados['data_hora'], dados['nome'], dados['tel'], dados['objetivo'], dados.get('restricoes', 'N/A'), dados['melhor_horario'], dados.get('ia_resposta_paciente', 'N/A'), dados.get('nome_arquivo', 'Nenhum'), dados['status_agenda'], dados['tipo'], "Pendente", ""]
+        sheet.append_row(nova_linha)
         return True
     except: return False
 
 # --- FLUXO PRINCIPAL ---
 def main():
+    if 'show_admin' not in st.session_state: st.session_state.show_admin = False
+
+    st.markdown(f"""<head><meta property="og:title" content="Estúdio de Pilates - Coluna sem Dor" /><meta property="og:image" content="https://raw.githubusercontent.com/consultor-frederico/Physion_Gym_Atendente/main/logo.png" /></head>""", unsafe_allow_html=True)
+
     client_sheets, service_calendar = conectar_google()
 
-    # --- SIDEBAR DE NAVEGAÇÃO ---
-    st.sidebar.title("MENU DE GESTÃO")
-    pagina = st.sidebar.radio("Ir para:", ["Agendamento Cliente", "Painel Admin (Restrito)"])
-
-    if pagina == "Painel Admin (Restrito)":
-        st.title("🛡️ Painel Administrativo")
-        senha = st.text_input("Digite a senha de administrador:", type="password")
-        if senha == SENHA_ADMIN:
-            st.success("Acesso Autorizado")
+    # --- TELA DE ADMINISTRADOR ---
+    if st.session_state.show_admin:
+        st.title("🔐 Área Administrativa")
+        senha = st.text_input("Senha de acesso:", type="password")
+        if senha == "adm123":
+            st.success("Acesso autorizado!")
             sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
-            dados = sheet.get_all_records()
+            dados_planilha = sheet.get_all_records()
             
-            if dados:
-                st.subheader("🚀 Lembretes para Amanhã")
-                amanha = (datetime.now() + timedelta(days=1)).strftime('%d/%m')
-                alunos_amanha = [r for r in dados if amanha in str(r.get('Horário Agendado', ''))]
-                
-                if alunos_amanha:
-                    for aluno in alunos_amanha:
-                        col_n, col_b = st.columns([3, 1])
-                        msg = f"Olá {aluno['Nome']}, confirmamos sua aula para amanhã ({aluno['Horário Agendado']}). Você confirma presença? 👍"
-                        link_wpp = f"https://wa.me/55{re.sub(r'\D', '', str(aluno['WhatsApp']))}?text={requests.utils.quote(msg)}"
-                        col_n.write(f"👤 **{aluno['Nome']}** - ⏰ {aluno['Horário Agendado']}")
-                        col_b.markdown(f'''<a href="{link_wpp}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">Mandar Lembrete</button></a>''', unsafe_allow_html=True)
-                else:
-                    st.info(f"Nenhum agendamento encontrado para amanhã ({amanha}).")
-                
-                st.divider()
-                st.subheader("📋 Todos os Registros")
-                st.dataframe(dados)
+            st.subheader("🚀 Lembretes de Amanhã")
+            amanha = (datetime.now() + timedelta(days=1)).strftime('%d/%m')
+            alunos_amanha = [r for r in dados_planilha if amanha in str(r.get('Horário Agendado', ''))]
+            
+            if alunos_amanha:
+                for aluno in alunos_amanha:
+                    col_n, col_b = st.columns([3, 1])
+                    msg = f"Olá {aluno['Nome']}, confirmamos sua aula para amanhã ({aluno['Horário Agendado']}). Você confirma presença? 👍"
+                    link_wpp = f"https://wa.me/55{re.sub(r'\D', '', str(aluno['WhatsApp']))}?text={requests.utils.quote(msg)}"
+                    col_n.write(f"👤 **{aluno['Nome']}** - ⏰ {aluno['Horário Agendado']}")
+                    col_b.markdown(f'''<a href="{link_wpp}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">Mandar WhatsApp</button></a>''', unsafe_allow_html=True)
             else:
-                st.info("Planilha vazia.")
-        elif senha != "":
-            st.error("Senha incorreta.")
+                st.info("Nenhum aluno para amanhã.")
+            
+            st.divider()
+            st.subheader("📋 Lista de Todos os Agendamentos")
+            st.dataframe(dados_planilha)
+            
+            if st.button("⬅️ Sair do Modo Admin"):
+                st.session_state.show_admin = False; st.rerun()
         return
 
-    # --- METADADOS PARA PREVIEW NO WHATSAPP ---
-    st.markdown(f"""
-        <head>
-            <meta property="og:title" content="Estúdio de Pilates - Coluna sem Dor" />
-            <meta property="og:description" content="Agendamento Inteligente e Avaliação Especializada 🧘‍♀️" />
-            <meta property="og:image" content="https://raw.githubusercontent.com/consultor-frederico/Physion_Gym_Atendente/main/logo.png" />
-            <meta property="og:type" content="website" />
-        </head>
-    """, unsafe_allow_html=True)
-
+    # --- FLUXO DO CLIENTE ---
     if 'fase' not in st.session_state: st.session_state.fase = 0 
     if 'tipo_atendimento' not in st.session_state: st.session_state.tipo_atendimento = ""
     if 'dados_form' not in st.session_state: st.session_state.dados_form = {}
@@ -204,57 +183,45 @@ def main():
     with col2:
         st.markdown("## Estúdio de pilates")
         st.markdown("#### Coluna sem dor e mais qualidade de vida 🌟")
-    
-    st.caption("Pilates | Fisioterapia | RPG | Acupuntura | DTM")
     st.divider()
 
-    # --- FASE 0: ESCOLHA DO SERVIÇO ---
+    # --- FASES DO AGENDAMENTO (CÓDIGO ORIGINAL) ---
     if st.session_state.fase == 0:
         st.subheader("Como podemos ajudar você hoje?")
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.info("🧘 **Já sou Aluno(a)**")
-            if st.button("Marcar minha Aula"):
-                st.session_state.tipo_atendimento = "Aluno da Casa"
-                st.session_state.fase = 1; st.rerun()
+            if st.button("🧘 Já sou Aluno(a)"):
+                st.session_state.tipo_atendimento = "Aluno da Casa"; st.session_state.fase = 1; st.rerun()
         with c2:
-            st.success("✨ **Quero ser Aluno(a)**")
-            if st.button("Agendar Aula Exp."):
+            if st.button("✨ Quero ser Aluno(a)"):
                 st.session_state.fase = 0.5; st.rerun()
         with c3:
-            st.warning("🏥 **Fisioterapia**")
-            if st.button("Agendar Consulta"):
-                st.session_state.tipo_atendimento = "Consulta Fisioterapia"
-                st.session_state.fase = 1; st.rerun()
+            if st.button("🏥 Fisioterapia"):
+                st.session_state.tipo_atendimento = "Consulta Fisioterapia"; st.session_state.fase = 1; st.rerun()
 
     if st.session_state.fase == 0.5:
         st.subheader("Bem-vindo! Escolha o tipo de aula:")
         if st.button("Apenas agendar (Rápido)"):
-            st.session_state.tipo_atendimento = "Novo Aluno - Direto"
-            st.session_state.fase = 1; st.rerun()
+            st.session_state.tipo_atendimento = "Novo - Rápido"; st.session_state.fase = 1; st.rerun()
         if st.button("Agendar com Avaliação Técnica"):
-            st.session_state.tipo_atendimento = "Novo Aluno - Avaliação"
-            st.session_state.fase = 1; st.rerun()
+            st.session_state.tipo_atendimento = "Novo - Avaliação"; st.session_state.fase = 1; st.rerun()
         if st.button("⬅️ Voltar"): st.session_state.fase = 0; st.rerun()
 
     if st.session_state.fase == 1:
         st.subheader(f"Agendamento: {st.session_state.tipo_atendimento}")
         nome = st.text_input("Nome Completo")
         tel = st.text_input("WhatsApp", placeholder="(11) 99999-9999")
-        
         objetivo = "Manutenção"
         restricoes = "N/A"
-        
         if "Novo" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
             objetivo = st.selectbox("Objetivo principal:", ["Alívio de Dores", "Postura", "Recuperação de Lesão", "Flexibilidade", "Outro"])
             restricoes = st.text_area("Descreva brevemente o que sente:")
-
         if st.button("Próximo Passo"):
             if nome and tel:
                 st.session_state.dados_form = {"nome": nome, "tel": tel, "objetivo": objetivo, "restricoes": restricoes}
                 if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
                     with st.spinner("Analisando..."):
-                        p = f"Aja como recepcionista clínica. Chame {nome} pelo nome. Diga que entendeu o caso de {objetivo} e acolha o relato '{restricoes}'. Seja sucinta (2 linhas)."
+                        p = f"Aja como recepcionista clínica. Chame {nome} pelo nome. Diga que entendeu o caso e acolha o relato. Seja sucinta."
                         st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Clínica.")
                     st.session_state.fase = 2
                 else: st.session_state.fase = 4
@@ -270,36 +237,38 @@ def main():
             st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
             if st.button("Analisar Exame"):
                 with st.spinner("Lendo laudo..."):
-                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas o diagnóstico de forma humana."
+                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta Analista.")
                 st.info(st.session_state.ia_resposta_paciente)
-        
         if st.button("✅ Ver Horários"): st.session_state.fase = 4; st.rerun()
 
     if st.session_state.fase == 4:
         st.subheader("🗓️ Escolha o Horário")
         horarios = buscar_horarios_livres(service_calendar)
         horario = st.selectbox("Disponíveis:", horarios)
-        
         if st.button("Confirmar Agendamento"):
             with st.spinner("Reservando..."):
                 st.session_state.horario_escolhido = horario
                 d = st.session_state.dados_form
                 if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-                    p_final = f"Paciente {d['nome']}. Relato: {d['restricoes']}. Objetivo: {d['objetivo']}. Exame: {st.session_state.conteudo_arquivo}. Resuma o acolhimento para o PDF."
+                    p_final = f"Paciente {d['nome']}. Relato: {d['restricoes']}. Resuma o acolhimento para o PDF."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_final, "Analista de Acolhimento.")
-                
                 status = criar_evento_agenda(service_calendar, horario, d['nome'], d['tel'], d['objetivo'])
                 salvar_na_planilha(client_sheets, {**d, "data_hora": datetime.now().strftime("%d/%m %H:%M"), "melhor_horario": horario, "ia_resposta_paciente": st.session_state.ia_resposta_paciente, "nome_arquivo": st.session_state.nome_arquivo, "status_agenda": status, "tipo": st.session_state.tipo_atendimento})
                 st.session_state.fase = 5; st.rerun()
 
     if st.session_state.fase == 5:
         st.balloons()
-        st.success(f"✅ Agendamento Realizado com Sucesso!")
-        st.markdown(f"### Aula/Consulta confirmada: **{st.session_state.horario_escolhido}**")
+        st.success(f"✅ Agendamento Realizado!")
+        st.markdown(f"### Confirmado: **{st.session_state.horario_escolhido}**")
         pdf_bytes = gerar_pdf_paciente(st.session_state.dados_form['nome'], st.session_state.dados_form['objetivo'], st.session_state.horario_escolhido, st.session_state.ia_resposta_paciente, st.session_state.tipo_atendimento)
-        st.download_button(label="📥 Baixar Comprovante (PDF)", data=pdf_bytes, file_name=f"Agendamento_{st.session_state.dados_form['nome']}.pdf", mime="application/pdf")
+        st.download_button(label="📥 Baixar Comprovante (PDF)", data=pdf_bytes, file_name=f"Agendamento.pdf", mime="application/pdf")
         st.button("🔄 Novo Atendimento", on_click=lambda: st.session_state.clear())
+
+    # --- BOTÃO DISCRETO DE ADMIN NO RODAPÉ ---
+    st.markdown("<br><br><hr>", unsafe_allow_html=True)
+    if st.button("⚙️ Administração"):
+        st.session_state.show_admin = True; st.rerun()
 
 if __name__ == "__main__":
     main()
