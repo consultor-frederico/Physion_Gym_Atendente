@@ -4,6 +4,7 @@ import json
 import requests
 import gspread
 import re
+import PyPDF2 # <-- NOVA BIBLIOTECA PARA LER PDF
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
@@ -39,6 +40,17 @@ def formatar_tel_callback():
         st.session_state.tel_input = f"({limpo[:2]}) {limpo[2:6]}-{limpo[6:]}"
 
 # --- FUNÇÕES DE SISTEMA ---
+# NOVA FUNÇÃO: LER O PDF
+def ler_conteudo_arquivo(uploaded_file):
+    if uploaded_file is None: return ""
+    try:
+        if uploaded_file.type == "application/pdf":
+            leitor = PyPDF2.PdfReader(uploaded_file)
+            texto = "\n".join([p.extract_text() for p in leitor.pages if p.extract_text()])
+            return texto
+        return str(uploaded_file.read(), "utf-8")
+    except: return "[Erro na leitura técnica do exame]"
+
 def conectar_google():
     try:
         info_chaves = json.loads(st.secrets["google_credentials"]["json_data"])
@@ -101,10 +113,12 @@ def salvar_na_planilha(client_sheets, dados):
     try:
         sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
         if not sheet.get_all_values():
-            sheet.append_row(["Data da Triagem", "Nome", "WhatsApp", "Objetivo", "Restrições/Dores", "Horário Agendado", "Parecer da IA para Instrutor", "Status"])
+            # CABEÇALHO ATUALIZADO COM AS NOVAS COLUNAS
+            sheet.append_row(["Data da Triagem", "Nome", "WhatsApp", "Objetivo", "Restrições/Dores", "Horário Agendado", "Análise Paciente", "Exame Anexado", "ANÁLISE PROFUNDA (PROFESSOR)", "Status"])
         linha = [
             dados['data_hora'], dados['nome'], dados['tel'], dados['objetivo'], 
-            dados['restricoes'], dados['melhor_horario'], dados['parecer_instrutor'], dados['status_agenda']
+            dados['restricoes'], dados['melhor_horario'], dados['ia_resposta_paciente'], 
+            dados['nome_arquivo'], dados['parecer_instrutor'], dados['status_agenda']
         ]
         sheet.append_row(linha)
         return True
@@ -115,6 +129,10 @@ def main():
     if 'fase' not in st.session_state: st.session_state.fase = 1
     if 'dados_form' not in st.session_state: st.session_state.dados_form = {}
     if 'ia_inicial' not in st.session_state: st.session_state.ia_inicial = ""
+    # NOVAS VARIÁVEIS DE SESSÃO
+    if 'ia_resposta_paciente' not in st.session_state: st.session_state.ia_resposta_paciente = "Nenhum exame analisado"
+    if 'conteudo_arquivo' not in st.session_state: st.session_state.conteudo_arquivo = "Sem PDF"
+    if 'nome_arquivo' not in st.session_state: st.session_state.nome_arquivo = "Nenhum"
 
     client_sheets, service_calendar = conectar_google()
 
@@ -142,7 +160,7 @@ def main():
             else:
                 st.session_state.dados_form.update({"nome": nome, "tel": tel, "objetivo": objetivo, "restricoes": restricoes})
                 with st.spinner("Nossa equipe virtual está analisando seu perfil..."):
-                    p = f"Aja como uma recepcionista muito acolhedora de um Studio de Pilates de alto padrão. O(a) futuro(a) aluno(a) {nome} busca o Pilates para {objetivo}. Condição física relatada: {restricoes}. Dê as boas-vindas, valide que o Pilates é excelente para o caso dele(a) (sem dar diagnósticos médicos) e convide calorosamente para agendar uma Aula Experimental."
+                    p = f"Aja como uma recepcionista muito acolhedora de um Studio de Pilates de alto padrão. O(a) futuro(a) aluno(a) {nome} busca o Pilates para {objetivo}. Condição física relatada: {restricoes}. Dê as boas-vindas, valide que o Pilates é excelente para o caso dele(a) (sem dar diagnósticos médicos) e convide calorosamente para agendar uma Aula Experimental ou enviar exames na próxima tela."
                     st.session_state.ia_inicial = consultar_ia(p, "Recepcionista de Studio de Pilates.")
                     st.session_state.fase = 2; st.rerun()
 
@@ -150,6 +168,23 @@ def main():
         st.subheader("2. Avaliação Preliminar")
         st.success(st.session_state.ia_inicial)
         
+        # --- NOVA SEÇÃO: UPLOAD DE EXAMES ---
+        st.write("---")
+        opcao = st.radio("Você tem algum laudo médico, raio-x ou ressonância em PDF?", ["Não, quero apenas agendar", "Sim, quero enviar meu exame (PDF)"], horizontal=True)
+        
+        if opcao == "Sim, quero enviar meu exame (PDF)":
+            arquivo = st.file_uploader("Anexar Exame (PDF)", type=["pdf"])
+            if arquivo:
+                st.session_state.nome_arquivo = arquivo.name
+                st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
+                if st.button("Analisar meu Exame"):
+                    with st.spinner("Lendo seu laudo médico..."):
+                        p_exame = f"Paciente {st.session_state.dados_form['nome']} enviou o seguinte exame: {st.session_state.conteudo_arquivo}. Dê um feedback curto, simples, sem usar termos complexos. Tranquilize o paciente dizendo que o Pilates é adaptável a isso e que o professor avaliará em detalhes na aula."
+                        st.session_state.ia_resposta_paciente = consultar_ia(p_exame, "Fisioterapeuta empático")
+                    st.info(f"**Análise Preliminar:**\n\n{st.session_state.ia_resposta_paciente}")
+        st.write("---")
+        # ------------------------------------
+
         c1, c2 = st.columns(2)
         if c1.button("✅ Ver Horários Disponíveis"): st.session_state.fase = 4; st.rerun()
         if c2.button("❌ Corrigir Meus Dados"): st.session_state.fase = 1; st.rerun()
@@ -164,12 +199,22 @@ def main():
             with st.spinner("Reservando seu horário..."):
                 d = st.session_state.dados_form
                 
-                # IA gera um resumo técnico para o professor do Studio ler antes da aula
-                p_instrutor = f"Faça um resumo de 3 linhas para o instrutor de Pilates se preparar para a aula. Aluno: {d['nome']}. Objetivo: {d['objetivo']}. Restrição/Dor: {d['restricoes']}."
+                # IA GERA A ANÁLISE PROFUNDA (INCLUINDO O PDF SE HOUVER)
+                p_instrutor = f"Aja como Fisioterapeuta Perito. Crie um PRONTUÁRIO TÉCNICO para o instrutor de Pilates que dará aula para {d['nome']}. Objetivo: {d['objetivo']}. Dores relatadas: {d['restricoes']}. Conteúdo do Laudo/Exame Anexado: {st.session_state.conteudo_arquivo}. Forneça: 1. Interpretação clínica. 2. Riscos biomecânicos. 3. Exercícios contraindicados. 4. Foco da primeira aula."
                 parecer = consultar_ia(p_instrutor, "Fisioterapeuta Especialista em Pilates")
                 
                 status = criar_evento_agenda(service_calendar, horario, d['nome'], d['tel'], d['objetivo'])
-                salvar_na_planilha(client_sheets, {**d, "data_hora": datetime.now().strftime("%d/%m %H:%M"), "melhor_horario": horario, "parecer_instrutor": parecer, "status_agenda": status})
+                
+                # SALVA TUDO NA PLANILHA
+                salvar_na_planilha(client_sheets, {
+                    **d, 
+                    "data_hora": datetime.now().strftime("%d/%m %H:%M"), 
+                    "melhor_horario": horario, 
+                    "ia_resposta_paciente": st.session_state.ia_resposta_paciente, 
+                    "nome_arquivo": st.session_state.nome_arquivo, 
+                    "parecer_instrutor": parecer, 
+                    "status_agenda": status
+                })
                 
                 st.session_state.fase = 5; st.rerun()
 
