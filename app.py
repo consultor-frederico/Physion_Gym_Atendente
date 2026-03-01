@@ -20,7 +20,7 @@ st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon=
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar']
 NOME_PLANILHA_GOOGLE = 'Leads_Pilates'
 
-# --- FUNÇÃO PARA GERAR O PDF DO PACIENTE ---
+# --- FUNÇÃO PARA GERAR O PDF DO PACIENTE COM DATA E HORA ---
 def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
     pdf = FPDF()
     pdf.add_page()
@@ -125,7 +125,17 @@ def salvar_na_planilha(client_sheets, dados):
 
 # --- FLUXO PRINCIPAL ---
 def main():
-    if 'fase' not in st.session_state: st.session_state.fase = 0 # Começa na escolha
+    # --- METADADOS PARA PREVIEW NO WHATSAPP ---
+    st.markdown(f"""
+        <head>
+            <meta property="og:title" content="Estúdio de Pilates - Coluna sem Dor" />
+            <meta property="og:description" content="Agendamento Inteligente e Avaliação Especializada 🧘‍♀️" />
+            <meta property="og:image" content="https://raw.githubusercontent.com/consultor-frederico/Physion_Gym_Atendente/main/logo.png" />
+            <meta property="og:type" content="website" />
+        </head>
+    """, unsafe_allow_html=True)
+
+    if 'fase' not in st.session_state: st.session_state.fase = 0 
     if 'tipo_atendimento' not in st.session_state: st.session_state.tipo_atendimento = ""
     if 'dados_form' not in st.session_state: st.session_state.dados_form = {}
     if 'ia_inicial' not in st.session_state: st.session_state.ia_inicial = ""
@@ -147,7 +157,6 @@ def main():
     st.caption("Especialistas em Pilates | Fisioterapia | RPG | Acupuntura | DTM | Palmilhas personalizadas")
     st.divider()
 
-    # --- FASE 0: BIFURCAÇÃO DO ATENDIMENTO ---
     if st.session_state.fase == 0:
         st.subheader("Como podemos ajudar você hoje?")
         c1, c2 = st.columns(2)
@@ -171,7 +180,6 @@ def main():
         tel = st.text_input("Seu WhatsApp", placeholder="(11) 99999-9999", value=d.get("tel", ""))
         objetivo = st.selectbox("Seu objetivo principal:", ["Alívio de Dores", "Postura", "Flexibilidade", "Fortalecimento Muscular", "Gestante", "Outro"])
         
-        # Só pede restrições se for avaliação
         restricoes = ""
         if st.session_state.tipo_atendimento == "Avaliação":
             restricoes = st.text_area("Descreva brevemente suas dores ou restrições médicas:", value=d.get("restricoes", ""))
@@ -186,10 +194,10 @@ def main():
                         st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Sucinta.")
                     st.session_state.fase = 2
                 else:
-                    st.session_state.fase = 4 # Vai direto para o horário
+                    st.session_state.fase = 4 
                 st.rerun()
 
-    if st.session_state.fase == 2: # Só ocorre no fluxo de Avaliação
+    if st.session_state.fase == 2:
         st.subheader("2. Avaliação Preliminar")
         st.success(st.session_state.ia_inicial)
         st.write("---")
@@ -219,7 +227,6 @@ def main():
                 d = st.session_state.dados_form
                 parecer = "N/A"
                 
-                # Se for avaliação, gera o resumo final antes de salvar
                 if st.session_state.tipo_atendimento == "Avaliação":
                     if not st.session_state.conteudo_arquivo:
                         p_final = f"O paciente {d['nome']} relatou: '{d['restricoes']}'. Resuma em um parágrafo acolhedor como vamos focar no objetivo de {d['objetivo']}."
