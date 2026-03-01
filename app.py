@@ -6,6 +6,7 @@ import gspread
 import re
 import PyPDF2
 import os
+import pandas as pd
 from fpdf import FPDF 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -73,7 +74,7 @@ def atualizar_status_aluno(client_sheets, nome_aluno, novo_status, motivo=""):
     except:
         return False
 
-# --- FUNÇÃO PARA GERAR O PDF DO PACIENTE COM DATA E HORA ---
+# --- FUNÇÃO PARA GERAR O PDF ---
 def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
     pdf = FPDF()
     pdf.add_page()
@@ -81,7 +82,7 @@ def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
         pdf.image("logo.png", x=10, y=8, w=33)
         pdf.ln(20)
     pdf.set_font("Arial", "B", 16)
-    titulo = "Comprovante de Agendamento" if "Antigo" in tipo_atendimento else "Relatorio de Acolhimento"
+    titulo = "Comprovante de Agendamento"
     pdf.cell(0, 10, titulo.encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(10)
     pdf.set_font("Arial", "B", 12)
@@ -91,18 +92,9 @@ def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
     pdf.set_text_color(0, 102, 204)
     pdf.cell(0, 10, f"Horario: {horario}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.set_text_color(0, 0, 0)
-    if "Avaliação" in tipo_atendimento or "Fisioterapia" in tipo_atendimento:
+    if analise_ia:
         pdf.ln(5)
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, "Analise Inicial:".encode('latin-1', 'replace').decode('latin-1'), ln=True)
-        pdf.set_font("Arial", "", 11)
-        pdf.multi_cell(0, 7, analise_ia.encode('latin-1', 'replace').decode('latin-1'))
-    pdf.ln(20)
-    pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(100, 100, 100)
-    aviso = ("AVISO: Este documento confirma seu agendamento. Esta analise nao substitui "
-             "a avaliacao presencial clinica.").encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 5, aviso, align='C')
+        pdf.multi_cell(0, 7, f"Analise: {analise_ia}".encode('latin-1', 'replace').decode('latin-1'))
     return bytes(pdf.output())
 
 # --- FUNÇÕES DE SISTEMA ---
@@ -114,7 +106,7 @@ def ler_conteudo_arquivo(uploaded_file):
             texto = "\n".join([p.extract_text() for p in leitor.pages if p.extract_text()])
             return texto
         return str(uploaded_file.read(), "utf-8")
-    except: return "[Erro na leitura técnica]"
+    except: return ""
 
 def conectar_google():
     try:
@@ -177,7 +169,7 @@ def salvar_na_planilha(client_sheets, dados):
 def main():
     client_sheets, service_calendar = conectar_google()
     
-    # --- LÓGICA DE CAPTURA DE RESPOSTA DO ALUNO (VIA WHATSAPP) ---
+    # --- LÓGICA DE CAPTURA DE RESPOSTA DO ALUNO ---
     params = st.query_params
     if "confirma" in params and "aluno" in params:
         nome_aluno = params["aluno"]
@@ -188,28 +180,16 @@ def main():
         st.title(f"Olá, {nome_aluno}! 🧘‍♀️")
         if acao == "sim":
             if atualizar_status_aluno(client_sheets, nome_aluno, "Confirmado"):
-                st.success("✨ **Sua presença foi confirmada com sucesso!** Ficamos muito felizes em ter você na aula amanhã. Até logo!")
-            else:
-                st.error("Ops! Não conseguimos localizar seu registro. Por favor, fale com a gente no WhatsApp.")
+                st.success("✨ **Sua presença foi confirmada com sucesso!** Até logo!")
+            else: st.error("Registro não encontrado.")
         elif acao == "nao":
-            st.subheader("Entendemos que imprevistos acontecem. 😔")
-            st.write("Por favor, selecione o motivo do cancelamento para nos ajudar na organização:")
-            motivo_selecionado = st.radio("Selecione uma opção:", ["Imprevisto de Trabalho", "Motivo de Saúde", "Dificuldade de Transporte", "Compromisso Pessoal Urgente", "Esquecimento/Perda de Prazo", "Outros"])
-            detalhes_outros = ""
-            if motivo_selecionado == "Outros":
-                detalhes_outros = st.text_area("Pode nos contar brevemente o motivo?")
+            motivo = st.radio("Motivo do cancelamento:", ["Saúde", "Trabalho", "Transporte", "Compromisso", "Outros"])
             if st.button("Confirmar Cancelamento"):
-                motivo_final = detalhes_outros if motivo_selecionado == "Outros" else motivo_selecionado
-                if atualizar_status_aluno(client_sheets, nome_aluno, "Cancelado", motivo_final):
-                    st.info("Obrigado pelo aviso. Seu horário foi liberado. Esperamos ver você em breve!")
-                else:
-                    st.error("Erro ao processar o cancelamento.")
+                atualizar_status_aluno(client_sheets, nome_aluno, "Cancelado", motivo)
+                st.info("Horário liberado.")
         st.stop()
 
     if 'show_admin' not in st.session_state: st.session_state.show_admin = False
-
-    # --- METADADOS PARA PREVIEW ---
-    st.markdown(f"""<head><meta property="og:title" content="Estúdio de Pilates - Coluna sem Dor" /><meta property="og:image" content="https://raw.githubusercontent.com/consultor-frederico/Physion_Gym_Atendente/main/logo.png" /></head>""", unsafe_allow_html=True)
 
     # --- TELA DE ADMINISTRADOR ---
     if st.session_state.show_admin:
@@ -219,43 +199,64 @@ def main():
             st.success("Acesso autorizado!")
             sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
             dados_planilha = sheet.get_all_records()
+            df = pd.DataFrame(dados_planilha)
+
+            # --- 🆕 DASHBOARD DE ANÁLISE ---
+            st.divider()
+            st.subheader("📊 Dashboard de Performance")
             
+            if not df.empty:
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                col_m1.metric("Total Agendamentos", len(df))
+                col_m2.metric("Confirmados", len(df[df['Confirmação (Sim/Não)'] == 'Confirmado']))
+                col_m3.metric("Cancelados", len(df[df['Confirmação (Sim/Não)'] == 'Cancelado']))
+                col_m4.metric("Pendentes", len(df[df['Confirmação (Sim/Não)'] == 'Pendente']))
+
+                st.write("#### Distribuição por Tipo de Atendimento")
+                # Prepara dados para o gráfico de pizza
+                tipo_counts = df['Tipo Atendimento'].value_counts().reset_index()
+                tipo_counts.columns = ['Tipo', 'Quantidade']
+                
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    # Gráfico de Pizza Nativo do Streamlit
+                    st.write("Proporção de Alunos/Pacientes")
+                    st.vega_lite_chart(tipo_counts, {
+                        'mark': {'type': 'arc', 'innerRadius': 50, 'tooltip': True},
+                        'encoding': {
+                            'theta': {'field': 'Quantidade', 'type': 'quantitative'},
+                            'color': {'field': 'Tipo', 'type': 'nominal', 'legend': {"orient": "bottom"}}
+                        }
+                    }, use_container_width=True)
+                with c2:
+                    st.write("Filtro por Status de Presença")
+                    status_counts = df['Confirmação (Sim/Não)'].value_counts().reset_index()
+                    st.bar_chart(status_counts.set_index('Confirmação (Sim/Não)'))
+            
+            st.divider()
             st.subheader("🚀 Lembretes de Amanhã")
-            # FILTRO: Somente alunos agendados para o dia seguinte
             amanha = (datetime.now() + timedelta(days=1)).strftime('%d/%m')
             alunos_amanha = [r for r in dados_planilha if str(r.get('Horário Agendado', '')).startswith(amanha)]
-            
             if alunos_amanha:
                 url_app = "https://physiongymatendente.streamlit.app" 
                 for aluno in alunos_amanha:
                     col_n, col_b = st.columns([3, 1])
                     nome_url = requests.utils.quote(str(aluno['Nome']))
-                    l_sim = f"{url_app}?confirma=sim&aluno={nome_url}"
-                    l_nao = f"{url_app}?confirma=nao&aluno={nome_url}"
-                    msg = (f"Olá {aluno['Nome']}, tudo bem? Confirmamos sua aula para amanhã ({aluno['Horário Agendado']})?\n\n"
-                           f"👍 SIM, CONFIRMO: {l_sim}\n\n"
-                           f"❌ NÃO POSSO IR: {l_nao}")
+                    msg = f"Olá {aluno['Nome']}, confirma sua aula amanhã ({aluno['Horário Agendado']})?\n\n👍 SIM: {url_app}?confirma=sim&aluno={nome_url}\n\n❌ NÃO: {url_app}?confirma=nao&aluno={nome_url}"
                     link_wpp = f"https://wa.me/55{re.sub(r'\D', '', str(aluno['WhatsApp']))}?text={requests.utils.quote(msg)}"
-                    col_n.write(f"👤 **{aluno['Nome']}** - {aluno['Horário Agendado']} ({aluno.get('Confirmação (Sim/Não)', 'Pendente')})")
+                    col_n.write(f"👤 **{aluno['Nome']}** - {aluno['Horário Agendado']} (`{aluno.get('Confirmação (Sim/Não)', 'Pendente')}`)")
                     col_b.markdown(f'''<a href="{link_wpp}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer;">Mandar WhatsApp</button></a>''', unsafe_allow_html=True)
-            else:
-                st.info(f"Nenhum aluno agendado para amanhã ({amanha}).")
-            
+            else: st.info("Nenhum agendamento para amanhã.")
+
             st.divider()
             st.subheader("📋 Lista Geral")
-            st.dataframe(dados_planilha)
+            st.dataframe(df)
             if st.button("⬅️ Sair"): st.session_state.show_admin = False; st.rerun()
         return
 
     # --- FLUXO DO CLIENTE ---
     if 'fase' not in st.session_state: st.session_state.fase = 0 
-    if 'tipo_atendimento' not in st.session_state: st.session_state.tipo_atendimento = ""
     if 'dados_form' not in st.session_state: st.session_state.dados_form = {}
-    if 'ia_inicial' not in st.session_state: st.session_state.ia_inicial = ""
-    if 'ia_resposta_paciente' not in st.session_state: st.session_state.ia_resposta_paciente = ""
-    if 'conteudo_arquivo' not in st.session_state: st.session_state.conteudo_arquivo = ""
-    if 'nome_arquivo' not in st.session_state: st.session_state.nome_arquivo = "Nenhum"
-    if 'horario_escolhido' not in st.session_state: st.session_state.horario_escolhido = ""
 
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -279,92 +280,55 @@ def main():
             if st.button("🏥 Fisioterapia"):
                 st.session_state.tipo_atendimento = "Consulta Fisioterapia"; st.session_state.fase = 1; st.rerun()
 
-    # --- 🆕 FASE 0.1: BUSCA POR CPF PARA ALUNOS FIXOS ---
     if st.session_state.fase == 0.1:
-        st.subheader("Identificação de Aluno")
+        st.subheader("Identificação")
         cpf_digitado = st.text_input("Digite seu CPF (apenas números):")
         if st.button("Continuar"):
-            if cpf_digitado:
-                aluno_encontrado = buscar_aluno_por_cpf(client_sheets, cpf_digitado)
-                if aluno_encontrado:
-                    st.session_state.dados_form = aluno_encontrado
-                    st.success(f"Bem-vindo de volta, {aluno_encontrado['nome']}!")
-                    st.session_state.fase = 4; st.rerun()
-                else:
-                    st.warning("CPF não encontrado em nosso banco de alunos fixos. Por favor, preencha o cadastro.")
-                    st.session_state.dados_form['cpf'] = cpf_digitado
-                    st.session_state.fase = 1; st.rerun()
+            aluno = buscar_aluno_por_cpf(client_sheets, cpf_digitado)
+            if aluno:
+                st.session_state.dados_form = aluno
+                st.success(f"Bem-vindo de volta, {aluno['nome']}!")
+                st.session_state.fase = 4; st.rerun()
             else:
-                st.error("Por favor, digite o CPF.")
-        if st.button("⬅️ Voltar"): st.session_state.fase = 0; st.rerun()
-
-    if st.session_state.fase == 0.5:
-        st.subheader("Bem-vindo! Escolha o tipo de aula:")
-        if st.button("Apenas agendar (Rápido)"):
-            st.session_state.tipo_atendimento = "Novo - Rápido"; st.session_state.fase = 1; st.rerun()
-        if st.button("Agendar com Avaliação Técnica"):
-            st.session_state.tipo_atendimento = "Novo - Avaliação"; st.session_state.fase = 1; st.rerun()
-        if st.button("⬅️ Voltar"): st.session_state.fase = 0; st.rerun()
+                st.warning("CPF não encontrado. Vamos preencher seu cadastro.")
+                st.session_state.dados_form['cpf'] = cpf_digitado
+                st.session_state.fase = 1; st.rerun()
 
     if st.session_state.fase == 1:
         st.subheader(f"Agendamento: {st.session_state.tipo_atendimento}")
         d_pref = st.session_state.dados_form
         nome = st.text_input("Nome Completo", value=d_pref.get('nome', ''))
-        tel = st.text_input("WhatsApp", placeholder="(11) 99999-9999", value=d_pref.get('tel', ''))
-        cpf = st.text_input("CPF (Apenas números)", value=d_pref.get('cpf', ''))
+        tel = st.text_input("WhatsApp", value=d_pref.get('tel', ''))
+        cpf = st.text_input("CPF", value=d_pref.get('cpf', ''))
         objetivo = "Manutenção"
         restricoes = "N/A"
         if "Novo" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-            objetivo = st.selectbox("Objetivo principal:", ["Alívio de Dores", "Postura", "Recuperação de Lesão", "Flexibilidade", "Outro"])
+            objetivo = st.selectbox("Objetivo:", ["Dores", "Postura", "Lesão", "Outro"])
             restricoes = st.text_area("Descreva brevemente o que sente:", value=d_pref.get('restricoes', ''))
-        if st.button("Próximo Passo"):
+        if st.button("Próximo"):
             if nome and tel and cpf:
                 st.session_state.dados_form = {"nome": nome, "tel": tel, "cpf": cpf, "objetivo": objetivo, "restricoes": restricoes}
                 salvar_ou_atualizar_aluno(client_sheets, st.session_state.dados_form)
-                if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-                    with st.spinner("Analisando..."):
-                        p = f"Aja como recepcionista clínica. Chame {nome} pelo nome. Diga que entendeu o caso e acolha o relato. Seja sucinta."
-                        st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Clínica.")
-                    st.session_state.fase = 2
-                else: st.session_state.fase = 4
-                st.rerun()
-            else: st.warning("Preencha os campos obrigatórios (Nome, WhatsApp e CPF).")
-
-    if st.session_state.fase == 2:
-        st.subheader("Triagem Técnica")
-        st.success(st.session_state.ia_inicial)
-        arquivo = st.file_uploader("Possui exames em PDF?", type=["pdf"])
-        if arquivo:
-            st.session_state.nome_arquivo = arquivo.name
-            st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
-            if st.button("Analisar Exame"):
-                with st.spinner("Lendo laudo..."):
-                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas."
-                    st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta Analista.")
-                st.info(st.session_state.ia_resposta_paciente)
-        if st.button("✅ Ver Horários"): st.session_state.fase = 4; st.rerun()
+                st.session_state.fase = 4; st.rerun()
+            else: st.warning("Preencha Nome, WhatsApp e CPF.")
 
     if st.session_state.fase == 4:
-        st.subheader("🗓️ Escolha o Horário")
+        st.subheader("Escolha seu Horário")
         horarios = buscar_horarios_livres(service_calendar)
         horario = st.selectbox("Disponíveis:", horarios)
         if st.button("Confirmar Agendamento"):
             with st.spinner("Reservando..."):
                 st.session_state.horario_escolhido = horario
                 d = st.session_state.dados_form
-                if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-                    p_final = f"Paciente {d['nome']}. Relato: {d['restricoes']}. Resuma o acolhimento para o PDF."
-                    st.session_state.ia_resposta_paciente = consultar_ia(p_final, "Analista de Acolhimento.")
                 status = criar_evento_agenda(service_calendar, horario, d['nome'], d['tel'], d['objetivo'])
-                salvar_na_planilha(client_sheets, {**d, "data_hora": datetime.now().strftime("%d/%m %H:%M"), "melhor_horario": horario, "ia_resposta_paciente": st.session_state.ia_resposta_paciente, "nome_arquivo": st.session_state.nome_arquivo, "status_agenda": status, "tipo": st.session_state.tipo_atendimento})
+                salvar_na_planilha(client_sheets, {**d, "data_hora": datetime.now().strftime("%d/%m %H:%M"), "melhor_horario": horario, "status_agenda": status, "tipo": st.session_state.tipo_atendimento})
                 st.session_state.fase = 5; st.rerun()
 
     if st.session_state.fase == 5:
         st.balloons()
-        st.success(f"✅ Agendamento Realizado com Sucesso!")
-        st.markdown(f"### Aula/Consulta confirmada: **{st.session_state.horario_escolhido}**")
-        pdf_bytes = gerar_pdf_paciente(st.session_state.dados_form['nome'], st.session_state.dados_form['objetivo'], st.session_state.horario_escolhido, st.session_state.ia_resposta_paciente, st.session_state.tipo_atendimento)
-        st.download_button(label="📥 Baixar Comprovante (PDF)", data=pdf_bytes, file_name=f"Agendamento_{st.session_state.dados_form['nome']}.pdf", mime="application/pdf")
+        st.success(f"✅ Agendamento Realizado!")
+        pdf_bytes = gerar_pdf_paciente(st.session_state.dados_form['nome'], st.session_state.dados_form['objetivo'], st.session_state.horario_escolhido, "", st.session_state.tipo_atendimento)
+        st.download_button(label="📥 Baixar Comprovante", data=pdf_bytes, file_name=f"Agendamento.pdf", mime="application/pdf")
         st.button("🔄 Novo Atendimento", on_click=lambda: st.session_state.clear())
 
     st.markdown("<br><br><hr>", unsafe_allow_html=True)
