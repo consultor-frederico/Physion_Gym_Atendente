@@ -6,7 +6,7 @@ import gspread
 import re
 import PyPDF2
 import os
-from fpdf import FPDF # <-- Necessário adicionar fpdf2 no requirements.txt
+from fpdf import FPDF 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
@@ -20,7 +20,7 @@ st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon=
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar']
 NOME_PLANILHA_GOOGLE = 'Leads_Pilates'
 
-# --- FUNÇÃO PARA GERAR O PDF DO PACIENTE ---
+# --- FUNÇÃO PARA GERAR O PDF DO PACIENTE CORRIGIDA ---
 def gerar_pdf_paciente(nome, objetivo, analise_ia):
     pdf = FPDF()
     pdf.add_page()
@@ -31,29 +31,30 @@ def gerar_pdf_paciente(nome, objetivo, analise_ia):
         pdf.ln(20)
     
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Relatório de Acolhimento", ln=True, align='C')
+    # Usamos .encode('latin-1', 'replace').decode('latin-1') para evitar erros de acentuação no FPDF
+    pdf.cell(0, 10, "Relatorio de Acolhimento".encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(10)
     
     pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, f"Paciente: {nome}", ln=True)
-    pdf.cell(0, 10, f"Objetivo principal: {objetivo}", ln=True)
+    pdf.cell(0, 10, f"Paciente: {nome}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
+    pdf.cell(0, 10, f"Objetivo principal: {objetivo}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.ln(5)
     
     pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, "Entendimento inicial do seu caso:", ln=True)
+    pdf.cell(0, 10, "Entendimento inicial do seu caso:".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.set_font("Arial", "", 11)
-    pdf.multi_cell(0, 7, analise_ia)
+    pdf.multi_cell(0, 7, analise_ia.encode('latin-1', 'replace').decode('latin-1'))
     
     pdf.ln(20)
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    # AVISO LEGAL OBRIGATÓRIO
-    aviso = ("AVISO: Este documento foi gerado por Inteligência Artificial para fins informativos de acolhimento. "
-             "Esta análise NÃO substitui uma avaliação física presencial. A conduta e o diagnóstico definitivo "
-             "serão realizados pelo profissional responsável durante a sua consulta no estúdio.")
+    aviso = ("AVISO: Este documento foi gerado por Inteligencia Artificial para fins informativos. "
+             "Esta analise NAO substitui uma avaliacao fisica presencial. A conduta definitiva "
+             "sera realizada pelo profissional durante a sua consulta.").encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 5, aviso, align='C')
     
-    return pdf.output(dest='S')
+    # IMPORTANTE: Retornar como bytes para o download_button
+    return bytes(pdf.output())
 
 # --- FUNÇÕES DE SISTEMA ---
 def ler_conteudo_arquivo(uploaded_file):
@@ -79,9 +80,9 @@ def consultar_ia(mensagem, sistema):
         headers = {"Authorization": f"Bearer {MINHA_CHAVE}", "Content-Type": "application/json"}
         dados = {"model": "llama-3.1-8b-instant", "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": mensagem}], "temperature": 0.4}
         resp = requests.post(url, headers=headers, json=dados)
-        if resp.status_code != 200: return "Olá! Por favor, avance para o agendamento."
+        if resp.status_code != 200: return "Ola! Por favor, avance para o agendamento."
         return resp.json()['choices'][0]['message']['content']
-    except: return "Olá! Por favor, avance para o agendamento."
+    except: return "Ola! Por favor, avance para o agendamento."
 
 def buscar_horarios_livres(service_calendar):
     sugestoes = []
@@ -126,7 +127,7 @@ def main():
     if 'fase' not in st.session_state: st.session_state.fase = 1
     if 'dados_form' not in st.session_state: st.session_state.dados_form = {}
     if 'ia_inicial' not in st.session_state: st.session_state.ia_inicial = ""
-    if 'ia_resposta_paciente' not in st.session_state: st.session_state.ia_resposta_paciente = "Aguardando análise de perfil..."
+    if 'ia_resposta_paciente' not in st.session_state: st.session_state.ia_resposta_paciente = "Aguardando analise de perfil..."
     if 'conteudo_arquivo' not in st.session_state: st.session_state.conteudo_arquivo = "Sem PDF"
     if 'nome_arquivo' not in st.session_state: st.session_state.nome_arquivo = "Nenhum"
 
@@ -177,7 +178,6 @@ def main():
             st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
             if st.button("Analisar meu Exame"):
                 with st.spinner("Lendo seu laudo..."):
-                    # PROMPT SIMPLIFICADO PARA O PACIENTE
                     p_ex = f"Paciente {st.session_state.dados_form['nome']}. Exame: {st.session_state.conteudo_arquivo}. Explique em 3 linhas de forma muito simples e acolhedora o que você viu no exame e como o Pilates vai proteger a coluna dele(a)."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta que explica de forma simples e humana.")
                 st.info(st.session_state.ia_resposta_paciente)
@@ -195,7 +195,6 @@ def main():
         if st.button("✅ Confirmar Agendamento"):
             with st.spinner("Finalizando..."):
                 d = st.session_state.dados_form
-                # PARECER TÉCNICO PARA O PROFESSOR
                 p_prof = f"Aluno: {d['nome']}. Dores: {d['restricoes']}. Exame: {st.session_state.conteudo_arquivo}. Forneça diagnóstico técnico e restrições de movimento."
                 parecer = consultar_ia(p_prof, "Fisioterapeuta Sênior Analista.")
                 
@@ -208,9 +207,19 @@ def main():
         st.success("✅ Agendamento Realizado com Sucesso!")
         st.write("Aguardamos você para sua aula experimental!")
         
-        # BOTÃO DE DOWNLOAD DO PDF
-        pdf_bytes = gerar_pdf_paciente(st.session_state.dados_form['nome'], st.session_state.dados_form['objetivo'], st.session_state.ia_resposta_paciente)
-        st.download_button(label="📥 Baixar meu Relatório de Acolhimento (PDF)", data=pdf_bytes, file_name=f"Boas_Vindas_{st.session_state.dados_form['nome']}.pdf", mime="application/pdf")
+        # GERA O PDF E DISPONIBILIZA PARA DOWNLOAD
+        pdf_bytes = gerar_pdf_paciente(
+            st.session_state.dados_form['nome'], 
+            st.session_state.dados_form['objetivo'], 
+            st.session_state.ia_resposta_paciente
+        )
+        
+        st.download_button(
+            label="📥 Baixar meu Relatório de Acolhimento (PDF)", 
+            data=pdf_bytes, 
+            file_name=f"Boas_Vindas_{st.session_state.dados_form['nome']}.pdf", 
+            mime="application/pdf"
+        )
         
         st.divider()
         st.button("🔄 Novo Atendimento", on_click=lambda: st.session_state.clear())
