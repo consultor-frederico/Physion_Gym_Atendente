@@ -30,7 +30,7 @@ def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
         pdf.ln(20)
     
     pdf.set_font("Arial", "B", 16)
-    titulo = "Comprovante de Agendamento" if "Aluno" in tipo_atendimento else "Relatorio de Acolhimento"
+    titulo = "Comprovante de Agendamento" if "Antigo" in tipo_atendimento else "Relatorio de Acolhimento"
     pdf.cell(0, 10, titulo.encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(10)
     
@@ -118,9 +118,28 @@ def criar_evento_agenda(service_calendar, horario_texto, nome, tel, objetivo):
 def salvar_na_planilha(client_sheets, dados):
     try:
         sh = client_sheets.open(NOME_PLANILHA_GOOGLE); sheet = sh.sheet1
+        # CABEÇALHO ATUALIZADO COM GESTÃO DE CONFIRMAÇÃO E CANCELAMENTO
         if not sheet.get_all_values():
-            sheet.append_row(["Data", "Nome", "WhatsApp", "Objetivo", "Dores", "Horário", "Análise Paciente", "Arquivo", "Análise Professor", "Status", "Tipo"])
-        sheet.append_row([dados['data_hora'], dados['nome'], dados['tel'], dados['objetivo'], dados.get('restricoes', 'N/A'), dados['melhor_horario'], dados.get('ia_resposta_paciente', 'N/A'), dados.get('nome_arquivo', 'Nenhum'), dados.get('parecer_instrutor', 'N/A'), dados['status_agenda'], dados['tipo']])
+            sheet.append_row([
+                "Data Cadastro", "Nome", "WhatsApp", "Objetivo", "Dores/Relato", 
+                "Horário Agendado", "Análise IA", "Arquivo PDF", "Status Agenda", 
+                "Tipo Atendimento", "Confirmação (Sim/Não)", "Motivo Cancelamento"
+            ])
+        
+        sheet.append_row([
+            dados['data_hora'], 
+            dados['nome'], 
+            dados['tel'], 
+            dados['objetivo'], 
+            dados.get('restricoes', 'N/A'), 
+            dados['melhor_horario'], 
+            dados.get('ia_resposta_paciente', 'N/A'), 
+            dados.get('nome_arquivo', 'Nenhum'), 
+            dados['status_agenda'], 
+            dados['tipo'],
+            "Pendente", # Status inicial da confirmação
+            ""          # Motivo de cancelamento inicia vazio
+        ])
         return True
     except: return False
 
@@ -220,7 +239,7 @@ def main():
             st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
             if st.button("Analisar Exame"):
                 with st.spinner("Lendo laudo..."):
-                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas o diagnóstico de forma humana."
+                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas de forma humana."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta Analista.")
                 st.info(st.session_state.ia_resposta_paciente)
         
