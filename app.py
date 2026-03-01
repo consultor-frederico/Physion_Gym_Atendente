@@ -15,7 +15,8 @@ ID_AGENDA = st.secrets["ID_AGENDA"]
 
 st.set_page_config(page_title="Studio Pilates - Recepção", page_icon="🧘‍♀️")
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/calendar']
+# ADICIONADO AQUI A PERMISSÃO DO GOOGLE DRIVE ('https://www.googleapis.com/auth/drive')
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar']
 NOME_PLANILHA_GOOGLE = 'Leads_Pilates' # Nome da planilha que você vai criar para o cliente
 
 # --- CSS PARA ESCONDER ÍCONES DO STREAMLIT ---
