@@ -20,8 +20,8 @@ st.set_page_config(page_title="Estúdio de Pilates - Coluna sem Dor", page_icon=
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar']
 NOME_PLANILHA_GOOGLE = 'Leads_Pilates'
 
-# --- FUNÇÃO PARA GERAR O PDF DO PACIENTE CORRIGIDA ---
-def gerar_pdf_paciente(nome, objetivo, analise_ia):
+# --- FUNÇÃO PARA GERAR O PDF DO PACIENTE COM DATA E HORA ---
+def gerar_pdf_paciente(nome, objetivo, horario, analise_ia):
     pdf = FPDF()
     pdf.add_page()
     
@@ -31,13 +31,17 @@ def gerar_pdf_paciente(nome, objetivo, analise_ia):
         pdf.ln(20)
     
     pdf.set_font("Arial", "B", 16)
-    # Usamos .encode('latin-1', 'replace').decode('latin-1') para evitar erros de acentuação no FPDF
     pdf.cell(0, 10, "Relatorio de Acolhimento".encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(10)
     
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, f"Paciente: {nome}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.cell(0, 10, f"Objetivo principal: {objetivo}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
+    
+    # ADICIONADO: DATA E HORA DO AGENDAMENTO NO PDF
+    pdf.set_text_color(0, 102, 204) # Azul para destacar o horário
+    pdf.cell(0, 10, f"Aula Agendada para: {horario}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
+    pdf.set_text_color(0, 0, 0) # Volta para preto
     pdf.ln(5)
     
     pdf.set_font("Arial", "B", 12)
@@ -50,10 +54,9 @@ def gerar_pdf_paciente(nome, objetivo, analise_ia):
     pdf.set_text_color(100, 100, 100)
     aviso = ("AVISO: Este documento foi gerado por Inteligencia Artificial para fins informativos. "
              "Esta analise NAO substitui uma avaliacao fisica presencial. A conduta definitiva "
-             "sera realizada pelo profissional durante a sua consulta.").encode('latin-1', 'replace').decode('latin-1')
+             "sera realizada pelo profissional durante a sua consulta presencial.").encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 5, aviso, align='C')
     
-    # IMPORTANTE: Retornar como bytes para o download_button
     return bytes(pdf.output())
 
 # --- FUNÇÕES DE SISTEMA ---
@@ -130,6 +133,7 @@ def main():
     if 'ia_resposta_paciente' not in st.session_state: st.session_state.ia_resposta_paciente = "Aguardando analise de perfil..."
     if 'conteudo_arquivo' not in st.session_state: st.session_state.conteudo_arquivo = "Sem PDF"
     if 'nome_arquivo' not in st.session_state: st.session_state.nome_arquivo = "Nenhum"
+    if 'horario_escolhido' not in st.session_state: st.session_state.horario_escolhido = ""
 
     client_sheets, service_calendar = conectar_google()
 
@@ -194,6 +198,7 @@ def main():
         
         if st.button("✅ Confirmar Agendamento"):
             with st.spinner("Finalizando..."):
+                st.session_state.horario_escolhido = horario
                 d = st.session_state.dados_form
                 p_prof = f"Aluno: {d['nome']}. Dores: {d['restricoes']}. Exame: {st.session_state.conteudo_arquivo}. Forneça diagnóstico técnico e restrições de movimento."
                 parecer = consultar_ia(p_prof, "Fisioterapeuta Sênior Analista.")
@@ -205,19 +210,21 @@ def main():
     if st.session_state.fase == 5:
         st.balloons()
         st.success("✅ Agendamento Realizado com Sucesso!")
-        st.write("Aguardamos você para sua aula experimental!")
+        st.markdown(f"### Sua aula esta confirmada para: **{st.session_state.horario_escolhido}**")
+        st.write("Aguardamos voce para sua aula experimental!")
         
-        # GERA O PDF E DISPONIBILIZA PARA DOWNLOAD
+        # GERA O PDF COM NOME, OBJETIVO, HORARIO E ANALISE
         pdf_bytes = gerar_pdf_paciente(
             st.session_state.dados_form['nome'], 
             st.session_state.dados_form['objetivo'], 
+            st.session_state.horario_escolhido,
             st.session_state.ia_resposta_paciente
         )
         
         st.download_button(
-            label="📥 Baixar meu Relatório de Acolhimento (PDF)", 
+            label="📥 Baixar meu Comprovante e Relatorio (PDF)", 
             data=pdf_bytes, 
-            file_name=f"Boas_Vindas_{st.session_state.dados_form['nome']}.pdf", 
+            file_name=f"Agendamento_{st.session_state.dados_form['nome']}.pdf", 
             mime="application/pdf"
         )
         
