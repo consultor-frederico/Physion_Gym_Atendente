@@ -30,19 +30,19 @@ def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
         pdf.ln(20)
     
     pdf.set_font("Arial", "B", 16)
-    titulo = "Comprovante de Agendamento" if tipo_atendimento == "Rápido" else "Relatorio de Acolhimento"
+    titulo = "Comprovante de Agendamento" if "Antigo" in tipo_atendimento else "Relatorio de Acolhimento"
     pdf.cell(0, 10, titulo.encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(10)
     
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, f"Paciente: {nome}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
-    pdf.cell(0, 10, f"Objetivo: {objetivo}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
+    pdf.cell(0, 10, f"Objetivo/Tipo: {objetivo}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     
     pdf.set_text_color(0, 102, 204)
     pdf.cell(0, 10, f"Horario: {horario}".encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf.set_text_color(0, 0, 0)
     
-    if tipo_atendimento == "Avaliação":
+    if "Avaliação" in tipo_atendimento:
         pdf.ln(5)
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, "Analise Inicial:".encode('latin-1', 'replace').decode('latin-1'), ln=True)
@@ -52,7 +52,7 @@ def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
     pdf.ln(20)
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
-    aviso = ("AVISO: Este documento confirma seu horario. Em caso de avaliacao tecnica, "
+    aviso = ("AVISO: Este documento confirma seu agendamento. Em caso de novos alunos, "
              "esta analise nao substitui a avaliacao presencial.").encode('latin-1', 'replace').decode('latin-1')
     pdf.multi_cell(0, 5, aviso, align='C')
     
@@ -109,7 +109,7 @@ def criar_evento_agenda(service_calendar, horario_texto, nome, tel, objetivo):
         partes = horario_texto.split(" às ")
         data_pt, hora_pt = partes[0].split(" ")[0], partes[1]
         data_c = datetime.strptime(f"{data_pt}/{datetime.now().year} {hora_pt}", "%d/%m/%Y %H:%M")
-        evento = {'summary': f'Aula Exp: {nome}', 'description': f'WhatsApp: {tel}\nObjetivo: {objetivo}', 'start': {'dateTime': data_c.isoformat(), 'timeZone': 'America/Sao_Paulo'}, 'end': {'dateTime': (data_c + timedelta(hours=1)).isoformat(), 'timeZone': 'America/Sao_Paulo'}}
+        evento = {'summary': f'Aula: {nome}', 'description': f'WhatsApp: {tel}\nObjetivo: {objetivo}', 'start': {'dateTime': data_c.isoformat(), 'timeZone': 'America/Sao_Paulo'}, 'end': {'dateTime': (data_c + timedelta(hours=1)).isoformat(), 'timeZone': 'America/Sao_Paulo'}}
         service_calendar.events().insert(calendarId=ID_AGENDA, body=evento).execute()
         return "Agendado"
     except: return "Erro Agenda"
@@ -157,63 +157,78 @@ def main():
     st.caption("Especialistas em Pilates | Fisioterapia | RPG | Acupuntura | DTM | Palmilhas personalizadas")
     st.divider()
 
+    # --- NOVO: BIFURCAÇÃO ALUNO ANTIGO OU NOVO ---
     if st.session_state.fase == 0:
-        st.subheader("Como podemos ajudar você hoje?")
+        st.subheader("Olá! Que bom ter você aqui.")
+        st.write("Para começarmos, você já é nosso aluno ou é sua primeira vez?")
+        
         c1, c2 = st.columns(2)
         with c1:
-            st.info("📅 **Agendamento Rápido**\n\nEscolha seu horário e receba a confirmação na hora.")
-            if st.button("Apenas Agendar Aula"):
-                st.session_state.tipo_atendimento = "Rápido"
-                st.session_state.fase = 1
-                st.rerun()
+            if st.button("Já sou Aluno(a)"):
+                st.session_state.tipo_atendimento = "Aluno Antigo"
+                st.session_state.fase = 1; st.rerun()
         with c2:
-            st.success("🏥 **Avaliação Especializada**\n\nFale com nossa IA, envie exames e receba um acolhimento técnico.")
-            if st.button("Agendar com Avaliação"):
-                st.session_state.tipo_atendimento = "Avaliação"
-                st.session_state.fase = 1
-                st.rerun()
+            if st.button("Sou Aluno(a) Novo(a)"):
+                st.session_state.fase = 0.5; st.rerun()
+
+    if st.session_state.fase == 0.5: # Submenu para alunos novos
+        st.subheader("Bem-vindo ao estúdio! Como quer agendar?")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.info("📅 **Agendamento Rápido**")
+            if st.button("Apenas Marcar Aula"):
+                st.session_state.tipo_atendimento = "Novo - Rápido"
+                st.session_state.fase = 1; st.rerun()
+        with c2:
+            st.success("🏥 **Avaliação + IA**")
+            if st.button("Marcar com Avaliação"):
+                st.session_state.tipo_atendimento = "Novo - Avaliação"
+                st.session_state.fase = 1; st.rerun()
+        if st.button("⬅️ Voltar"): st.session_state.fase = 0; st.rerun()
 
     if st.session_state.fase == 1:
-        st.subheader("1. Conhecendo Você")
+        st.subheader(f"Cadastro: {st.session_state.tipo_atendimento}")
         d = st.session_state.dados_form
         nome = st.text_input("Seu Nome Completo", value=d.get("nome", ""))
         tel = st.text_input("Seu WhatsApp", placeholder="(11) 99999-9999", value=d.get("tel", ""))
-        objetivo = st.selectbox("Seu objetivo principal:", ["Alívio de Dores", "Postura", "Flexibilidade", "Fortalecimento Muscular", "Gestante", "Outro"])
         
-        restricoes = ""
-        if st.session_state.tipo_atendimento == "Avaliação":
-            restricoes = st.text_area("Descreva brevemente suas dores ou restrições médicas:", value=d.get("restricoes", ""))
+        objetivo = "Manutenção / Aula regular"
+        restricoes = "N/A - Aluno Antigo"
+        
+        # Só pede detalhes se for Aluno Novo
+        if "Novo" in st.session_state.tipo_atendimento:
+            objetivo = st.selectbox("Seu objetivo principal:", ["Alívio de Dores", "Postura", "Flexibilidade", "Fortalecimento Muscular", "Gestante", "Outro"])
+            restricoes = st.text_area("Conte-nos o que você sente (dores ou restrições):", value=d.get("restricoes", ""))
 
         if st.button("💬 Continuar Agendamento"):
             if not nome or not tel: st.warning("Por favor, preencha nome e telefone.")
             else:
                 st.session_state.dados_form.update({"nome": nome, "tel": tel, "objetivo": objetivo, "restricoes": restricoes})
-                if st.session_state.tipo_atendimento == "Avaliação":
+                if st.session_state.tipo_atendimento == "Novo - Avaliação":
                     with st.spinner("Analisando seu perfil..."):
-                        p = f"Aja como uma recepcionista humana. Seja extremamente curta (máximo 2 linhas). Diga a {nome} que você entendeu perfeitamente o objetivo de {objetivo} e acolha brevemente o que foi relatado. Termine convidando para a próxima fase."
-                        st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Sucinta.")
+                        p = f"Aja como uma recepcionista técnica. Seja curta. Diga a {nome} que você entendeu que o foco é {objetivo} e que o relato de '{restricoes}' foi recebido."
+                        st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Técnica.")
                     st.session_state.fase = 2
                 else:
-                    st.session_state.fase = 4 
+                    st.session_state.fase = 4 # Antigos ou Novos Rápidos pulam direto para a agenda
                 st.rerun()
 
-    if st.session_state.fase == 2:
+    if st.session_state.fase == 2: # Só ocorre no fluxo de Avaliação para Novos
         st.subheader("2. Avaliação Preliminar")
         st.success(st.session_state.ia_inicial)
-        st.write("---")
-        st.markdown("**Você possui algum exame (Ressonância, Raio-X) em PDF?**")
+        st.markdown("**Você possui algum exame em PDF?**")
         arquivo = st.file_uploader("Anexar Exame (Opcional)", type=["pdf"])
         if arquivo:
             st.session_state.nome_arquivo = arquivo.name
             st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
             if st.button("Analisar meu Exame"):
                 with st.spinner("Lendo seu laudo..."):
-                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Exame: {st.session_state.conteudo_arquivo}. Diga que conseguiu ler o exame com sucesso. Em 3 linhas, explique o que encontrou e como o Pilates ajudará."
+                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Exame: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas o que encontrou e como o Pilates ajudará."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta que resume exames.")
                 st.info(st.session_state.ia_resposta_paciente)
         
         c1, c2 = st.columns(2)
-        if c1.button("✅ Ver Horários Disponíveis"): st.session_state.fase = 4; st.rerun()
+        if c1.button("✅ Ver Horários"): st.session_state.fase = 4; st.rerun()
         if c2.button("❌ Voltar"): st.session_state.fase = 0; st.rerun()
 
     if st.session_state.fase == 4:
@@ -225,17 +240,15 @@ def main():
             with st.spinner("Finalizando..."):
                 st.session_state.horario_escolhido = horario
                 d = st.session_state.dados_form
-                parecer = "N/A"
+                parecer = "Aluno Antigo - Histórico na Ficha"
                 
-                if st.session_state.tipo_atendimento == "Avaliação":
-                    if not st.session_state.conteudo_arquivo:
-                        p_final = f"O paciente {d['nome']} relatou: '{d['restricoes']}'. Resuma em um parágrafo acolhedor como vamos focar no objetivo de {d['objetivo']}."
-                    else:
-                        p_final = f"O paciente {d['nome']} relatou: '{d['restricoes']}'. O exame diz: '{st.session_state.conteudo_arquivo}'. Faça um resumo unindo as dores com o exame."
+                if st.session_state.tipo_atendimento == "Novo - Avaliação":
+                    p_final = f"Aluno Novo {d['nome']}. Relatou: '{d['restricoes']}'. Objetivo: {d['objetivo']}. Resuma o acolhimento."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_final, "Analista de Acolhimento.")
-                    
-                    p_prof = f"Aluno: {d['nome']}. Dores: {d['restricoes']}. Exame: {st.session_state.conteudo_arquivo}. Forneça diagnóstico técnico."
+                    p_prof = f"Aluno: {d['nome']}. Dores: {d['restricoes']}. Exame: {st.session_state.conteudo_arquivo}. Dê o diagnóstico técnico."
                     parecer = consultar_ia(p_prof, "Fisioterapeuta Sênior.")
+                elif st.session_state.tipo_atendimento == "Novo - Rápido":
+                    parecer = "Aluno Novo - Agendamento Direto"
                 
                 status = criar_evento_agenda(service_calendar, horario, d['nome'], d['tel'], d['objetivo'])
                 salvar_na_planilha(client_sheets, {**d, "data_hora": datetime.now().strftime("%d/%m %H:%M"), "melhor_horario": horario, "ia_resposta_paciente": st.session_state.ia_resposta_paciente, "nome_arquivo": st.session_state.nome_arquivo, "parecer_instrutor": parecer, "status_agenda": status, "tipo": st.session_state.tipo_atendimento})
@@ -243,7 +256,7 @@ def main():
 
     if st.session_state.fase == 5:
         st.balloons()
-        st.success(f"✅ Agendamento de {st.session_state.tipo_atendimento} Realizado!")
+        st.success(f"✅ Agendamento Realizado!")
         st.markdown(f"### Aula confirmada: **{st.session_state.horario_escolhido}**")
         
         pdf_bytes = gerar_pdf_paciente(st.session_state.dados_form['nome'], st.session_state.dados_form['objetivo'], st.session_state.horario_escolhido, st.session_state.ia_resposta_paciente, st.session_state.tipo_atendimento)
