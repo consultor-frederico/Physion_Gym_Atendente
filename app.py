@@ -30,7 +30,7 @@ def gerar_pdf_paciente(nome, objetivo, horario, analise_ia, tipo_atendimento):
         pdf.ln(20)
     
     pdf.set_font("Arial", "B", 16)
-    titulo = "Comprovante de Agendamento" if "Antigo" in tipo_atendimento else "Relatorio de Acolhimento"
+    titulo = "Comprovante de Agendamento" if "Aluno" in tipo_atendimento else "Relatorio de Acolhimento"
     pdf.cell(0, 10, titulo.encode('latin-1', 'replace').decode('latin-1'), ln=True, align='C')
     pdf.ln(10)
     
@@ -126,7 +126,15 @@ def salvar_na_planilha(client_sheets, dados):
 
 # --- FLUXO PRINCIPAL ---
 def main():
-    st.markdown(f"""<head><meta property="og:title" content="Estúdio de Pilates - Coluna sem Dor" /><meta property="og:image" content="https://raw.githubusercontent.com/consultor-frederico/Physion_Gym_Atendente/main/logo.png" /></head>""", unsafe_allow_html=True)
+    # --- METADADOS PARA PREVIEW NO WHATSAPP ---
+    st.markdown(f"""
+        <head>
+            <meta property="og:title" content="Estúdio de Pilates - Coluna sem Dor" />
+            <meta property="og:description" content="Agendamento Inteligente e Avaliação Especializada 🧘‍♀️" />
+            <meta property="og:image" content="https://raw.githubusercontent.com/consultor-frederico/Physion_Gym_Atendente/main/logo.png" />
+            <meta property="og:type" content="website" />
+        </head>
+    """, unsafe_allow_html=True)
 
     if 'fase' not in st.session_state: st.session_state.fase = 0 
     if 'tipo_atendimento' not in st.session_state: st.session_state.tipo_atendimento = ""
@@ -155,12 +163,12 @@ def main():
         st.subheader("Como podemos ajudar você hoje?")
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.info("🧘 **Pilates (Aluno Antigo)**")
+            st.info("🧘 **Já sou Aluno(a)**")
             if st.button("Marcar minha Aula"):
-                st.session_state.tipo_atendimento = "Aluno Antigo"
+                st.session_state.tipo_atendimento = "Aluno da Casa"
                 st.session_state.fase = 1; st.rerun()
         with c2:
-            st.success("✨ **Pilates (Novo Aluno)**")
+            st.success("✨ **Quero ser Aluno(a)**")
             if st.button("Agendar Aula Exp."):
                 st.session_state.fase = 0.5; st.rerun()
         with c3:
@@ -172,10 +180,10 @@ def main():
     if st.session_state.fase == 0.5:
         st.subheader("Bem-vindo! Escolha o tipo de aula:")
         if st.button("Apenas agendar (Rápido)"):
-            st.session_state.tipo_atendimento = "Novo - Rápido"
+            st.session_state.tipo_atendimento = "Novo Aluno - Direto"
             st.session_state.fase = 1; st.rerun()
         if st.button("Agendar com Avaliação Técnica"):
-            st.session_state.tipo_atendimento = "Novo - Avaliação"
+            st.session_state.tipo_atendimento = "Novo Aluno - Avaliação"
             st.session_state.fase = 1; st.rerun()
         if st.button("⬅️ Voltar"): st.session_state.fase = 0; st.rerun()
 
@@ -188,15 +196,15 @@ def main():
         restricoes = "N/A"
         
         if "Novo" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-            objetivo = st.selectbox("Objetivo principal:", ["Alívio de Dores", "Postura", "Recuperação de Lesão", "Flexibilidade", "Outro"])
+            objetivo = st.selectbox("Seu objetivo principal:", ["Alívio de Dores", "Postura", "Recuperação de Lesão", "Flexibilidade", "Outro"])
             restricoes = st.text_area("Descreva brevemente o que sente:")
 
         if st.button("Próximo Passo"):
             if nome and tel:
                 st.session_state.dados_form = {"nome": nome, "tel": tel, "objetivo": objetivo, "restricoes": restricoes}
                 if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-                    with st.spinner("Analisando..."):
-                        p = f"Aja como recepcionista clínica. Chame {nome} pelo nome. Diga que entendeu que o caso é {objetivo} e acolha o relato '{restricoes}'. Seja sucinta (2 linhas)."
+                    with st.spinner("Analisando seu perfil..."):
+                        p = f"Aja como recepcionista clínica. Chame {nome} pelo nome. Diga que entendeu o caso de {objetivo} e acolha o relato '{restricoes}'. Seja sucinta (2 linhas)."
                         st.session_state.ia_inicial = consultar_ia(p, "Recepcionista Clínica.")
                     st.session_state.fase = 2
                 else: st.session_state.fase = 4
@@ -212,7 +220,7 @@ def main():
             st.session_state.conteudo_arquivo = ler_conteudo_arquivo(arquivo)
             if st.button("Analisar Exame"):
                 with st.spinner("Lendo laudo..."):
-                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas de forma humana."
+                    p_ex = f"Paciente {st.session_state.dados_form['nome']}. Conteúdo: {st.session_state.conteudo_arquivo}. Resuma em 3 linhas o diagnóstico de forma humana."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_ex, "Fisioterapeuta Analista.")
                 st.info(st.session_state.ia_resposta_paciente)
         
@@ -228,9 +236,8 @@ def main():
                 st.session_state.horario_escolhido = horario
                 d = st.session_state.dados_form
                 
-                # Se for avaliação ou fisio, a IA gera o resumo final para o PDF agora
                 if "Avaliação" in st.session_state.tipo_atendimento or "Fisioterapia" in st.session_state.tipo_atendimento:
-                    p_final = f"Paciente {d['nome']}. Relato: {d['restricoes']}. Objetivo: {d['objetivo']}. Exame: {st.session_state.conteudo_arquivo}. Resuma o acolhimento para o PDF de agendamento."
+                    p_final = f"Paciente {d['nome']}. Relato: {d['restricoes']}. Objetivo: {d['objetivo']}. Exame: {st.session_state.conteudo_arquivo}. Resuma o acolhimento para o PDF."
                     st.session_state.ia_resposta_paciente = consultar_ia(p_final, "Analista de Acolhimento.")
                 
                 status = criar_evento_agenda(service_calendar, horario, d['nome'], d['tel'], d['objetivo'])
@@ -239,8 +246,8 @@ def main():
 
     if st.session_state.fase == 5:
         st.balloons()
-        st.success(f"✅ Agendamento de {st.session_state.tipo_atendimento} Realizado!")
-        st.markdown(f"### Confirmado para: **{st.session_state.horario_escolhido}**")
+        st.success(f"✅ Agendamento Realizado com Sucesso!")
+        st.markdown(f"### Aula/Consulta confirmada: **{st.session_state.horario_escolhido}**")
         
         pdf_bytes = gerar_pdf_paciente(st.session_state.dados_form['nome'], st.session_state.dados_form['objetivo'], st.session_state.horario_escolhido, st.session_state.ia_resposta_paciente, st.session_state.tipo_atendimento)
         st.download_button(label="📥 Baixar Comprovante (PDF)", data=pdf_bytes, file_name=f"Agendamento_{st.session_state.dados_form['nome']}.pdf", mime="application/pdf")
